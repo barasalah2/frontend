@@ -1,0 +1,34 @@
+{
+  // .vscode/launch.json
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Debug Express (tsx, hot‑reload)",
+      "type": "node",
+      "request": "launch",
+
+      // ① Use tsx as the runtime
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run-script", "dev:debug"],
+
+      // ② Attach the debugger to automatically re‑spawned tsx child process
+      "autoAttachChildProcesses": true,
+
+      // ③ Map source files so break‑points work
+      "sourceMaps": true,
+      "resolveSourceMapLocations": [
+        "${workspaceFolder}/**",
+        "!**/node_modules/**"
+      ],
+
+      // ④ Pull env variables from .env
+      "envFile": "${workspaceFolder}/.env",
+
+      // ⑤ Where VS Code should look for TS files
+      "cwd": "${workspaceFolder}",
+
+      // ⑥ Internal console so logs show in Debug Console
+      "console": "integratedTerminal"
+    }
+  ]
+}

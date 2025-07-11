@@ -107,7 +107,12 @@ export function EnhancedWorkPackageTable({ data }: EnhancedWorkPackageTableProps
   };
 
   const generateVisualization = async () => {
+    console.log('Generate visualization button clicked!');
+    console.log('Data:', data);
+    console.log('Data length:', data?.length);
+    
     if (!data || data.length === 0) {
+      console.log('No data available for visualization');
       toast({
         title: "No Data",
         description: "Cannot generate visualization without data",
@@ -116,6 +121,7 @@ export function EnhancedWorkPackageTable({ data }: EnhancedWorkPackageTableProps
       return;
     }
 
+    console.log('Starting visualization generation...');
     setIsGeneratingViz(true);
     try {
       // Prepare column information
