@@ -1,0 +1,210 @@
+import React, { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import * as XLSX from 'xlsx';
+import './App.css';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+
+export default function WorkpacksGenie() {
+  const [messages, setMessages] = useState([]);
+  const [input, setInput] = useState('');
+  const [convId, setConvId] = useState(null);
+
+  /* ---------- initial greeting ---------- */
+  useEffect(() => {
+    setMessages([
+      {
+        id: Date.now(),
+        text: 'Hello! I am Workpacks Genie. Ask me anything!',
+        sender: 'bot'
+      }
+    ]);
+  }, []);
+
+  /* ---------- sendMessage handler ---------- */
+  const sendMessage = async (e) => {
+    e.preventDefault();
+    if (!input.trim()) return;
+
+    const userMsg = { id: Date.now(), text: input.trim(), sender: 'user' };
+    const typingMsg = { id: Date.now() + 1, text: 'Thinking…', sender: 'bot' };
+
+    setMessages((prev) => [...prev, userMsg, typingMsg]);
+    setInput('');
+
+    try {
+      const res = await fetch('http://localhost:5000/api/genie', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question: input.trim(), conv_id: convId })
+      });
+
+      const payload = await res.json();
+      console.log(payload);
+
+      if (payload.conv_id && payload.conv_id !== convId) {
+        setConvId(payload.conv_id);
+      }
+
+      /* ---------- build table if any ---------- */
+      let table = null;
+      let headers = null;
+
+      if (Array.isArray(payload.data_array) && payload.data_array.length > 0) {
+        try {
+          const parsedRows = payload.data_array.map((row) => {
+            if (typeof row === 'string') {
+              const obj = JSON.parse(row);
+              if (!headers) headers = Object.keys(obj);
+              return Object.values(obj);
+            } else if (typeof row === 'object') {
+              if (!headers) headers = Object.keys(row);
+              return Object.values(row);
+            }
+            return [row];
+          });
+          table = parsedRows;
+        } catch (err) {
+          console.warn('Failed to parse table data:', err);
+        }
+      }
+
+      /* ---------- compose new message(s) ---------- */
+      const contentMsg = {
+        id: Date.now() + 2,
+        text: payload.content,
+        sender: 'bot'
+      };
+
+      const tableMsg =
+        table && table.length > 0
+          ? {
+              id: Date.now() + 3,
+              text: '', // no duplicate content
+              sender: 'bot',
+              table,
+              headers,
+              downloadable: true
+            }
+          : null;
+
+      const newMsgs = tableMsg ? [contentMsg, tableMsg] : [contentMsg];
+
+      setMessages((prev) => [
+        ...prev.filter((m) => m.id !== typingMsg.id),
+        ...newMsgs
+      ]);
+    } catch (err) {
+      console.error(err);
+      setMessages((prev) => [
+        ...prev.filter((m) => m.id !== typingMsg.id),
+        {
+          id: Date.now() + 4,
+          text: '❌ Error fetching response.',
+          sender: 'bot'
+        }
+      ]);
+    }
+  };
+
+  /* ---------- Excel export helper ---------- */
+  const exportToExcel = (data, headers) => {
+    if (!Array.isArray(data) || data.length === 0) return;
+    const fullData = headers ? [headers, ...data] : data;
+    const ws = XLSX.utils.aoa_to_sheet(fullData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Results');
+    XLSX.writeFile(wb, 'workpacks_output.xlsx');
+  };
+
+  /* ---------- component render ---------- */
+  return (
+    <div className="app-container">
+      {/* header */}
+      <motion.div
+        className="header"
+        initial={{ opacity: 0, y: -20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5 }}
+      >
+        <img src="/logo.png" alt="Workpacks Delta Logo" />
+        <h1>Workpacks Genie™</h1>
+      </motion.div>
+
+      {/* chat box */}
+      <div className="chat-box">
+        <div className="messages">
+          <AnimatePresence initial={false}>
+            {messages.map((msg) => (
+              <motion.div
+                key={msg.id}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -20 }}
+                transition={{ duration: 0.3 }}
+                className={`message ${msg.sender}`}
+              >
+                <span className="bubble">
+                  {msg.sender === 'bot' ? (
+                    /* Always render GitHub‑flavoured Markdown for bot text */
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                      {msg.text}
+                    </ReactMarkdown>
+                  ) : (
+                    /* Raw input for user messages */
+                    msg.text
+                  )}
+                </span>
+
+                {/* table (if present) */}
+                {msg.table && (
+                  <>
+                    <div className="scrollable-table">
+                      <table>
+                        <thead>
+                          <tr>
+                            {(msg.headers ?? msg.table[0]).map((header, idx) => (
+                              <th key={idx}>{header || `Column ${idx + 1}`}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {msg.table.map((row, rowIdx) => (
+                            <tr key={rowIdx}>
+                              {row.map((cell, cellIdx) => (
+                                <td key={cellIdx}>{cell}</td>
+                              ))}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    {msg.downloadable && (
+                      <button
+                        className="excel-button"
+                        onClick={() => exportToExcel(msg.table, msg.headers)}
+                      >
+                        📥 Export to Excel
+                      </button>
+                    )}
+                  </>
+                )}
+              </motion.div>
+            ))}
+          </AnimatePresence>
+        </div>
+
+        {/* input area */}
+        <form onSubmit={sendMessage} className="input-area">
+          <input
+            type="text"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            placeholder="Ask Workpacks Genie..."
+          />
+          <button type="submit">Send</button>
+        </form>
+      </div>
+    </div>
+  );
+}
