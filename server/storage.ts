@@ -1,4 +1,6 @@
 import { users, conversations, messages, workPackages, type User, type InsertUser, type Conversation, type InsertConversation, type Message, type InsertMessage, type WorkPackage, type InsertWorkPackage } from "@shared/schema";
+import { db } from "./db";
+import { eq, desc, and } from "drizzle-orm";
 
 export interface IStorage {
   // User operations
@@ -91,6 +93,67 @@ export class MemStorage implements IStorage {
         updatedAt: new Date()
       };
       this.workPackages.set(workPackage.id, workPackage);
+    });
+
+    // Initialize sample conversations
+    const sampleConversations = [
+      {
+        title: "CWA-2301 Progress Review",
+        category: "cwa-analysis",
+        userId: "default_user",
+        metadata: { projectId: "CWA-2301" }
+      },
+      {
+        title: "Schedule Planning Q1 2025",
+        category: "scheduling", 
+        userId: "default_user",
+        metadata: { quarter: "Q1-2025" }
+      },
+      {
+        title: "Resource Allocation Updates",
+        category: "resource-planning",
+        userId: "default_user",
+        metadata: { department: "engineering" }
+      }
+    ];
+
+    sampleConversations.forEach(conv => {
+      const conversation: Conversation = {
+        ...conv,
+        id: this.currentConversationId++,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        metadata: conv.metadata || null
+      };
+      this.conversations.set(conversation.id, conversation);
+
+      // Add sample messages for each conversation
+      const sampleMessages = [
+        {
+          conversationId: conversation.id,
+          content: "Hello! How can I help you with your AWP today?",
+          sender: "bot" as const,
+          messageType: "text" as const
+        },
+        {
+          conversationId: conversation.id,
+          content: conv.title.includes("CWA") ? "Can you show me the progress for CWA-2301?" : 
+                   conv.title.includes("Schedule") ? "What's the current schedule status?" :
+                   "How are our resources allocated?",
+          sender: "user" as const,
+          messageType: "text" as const
+        }
+      ];
+
+      sampleMessages.forEach(msg => {
+        const message: Message = {
+          ...msg,
+          id: this.currentMessageId++,
+          createdAt: new Date(),
+          data: null
+        };
+        this.messages.set(message.id, message);
+      });
     });
   }
 
@@ -226,4 +289,124 @@ export class MemStorage implements IStorage {
   }
 }
 
-export const storage = new MemStorage();
+// Database Storage Implementation
+export class DatabaseStorage implements IStorage {
+  async getUser(id: number): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.id, id));
+    return user || undefined;
+  }
+
+  async getUserByUsername(username: string): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.username, username));
+    return user || undefined;
+  }
+
+  async createUser(insertUser: InsertUser): Promise<User> {
+    const [user] = await db
+      .insert(users)
+      .values(insertUser)
+      .returning();
+    return user;
+  }
+
+  async getConversations(userId: string): Promise<Conversation[]> {
+    return await db.select().from(conversations)
+      .where(eq(conversations.userId, userId))
+      .orderBy(desc(conversations.updatedAt));
+  }
+
+  async getConversationsByCategory(userId: string, category: string): Promise<Conversation[]> {
+    return await db.select().from(conversations)
+      .where(and(eq(conversations.userId, userId), eq(conversations.category, category)))
+      .orderBy(desc(conversations.updatedAt));
+  }
+
+  async getConversation(id: number): Promise<Conversation | undefined> {
+    const [conversation] = await db.select().from(conversations).where(eq(conversations.id, id));
+    return conversation || undefined;
+  }
+
+  async createConversation(insertConversation: InsertConversation): Promise<Conversation> {
+    const [conversation] = await db
+      .insert(conversations)
+      .values(insertConversation)
+      .returning();
+    return conversation;
+  }
+
+  async updateConversation(id: number, updates: Partial<Conversation>): Promise<Conversation | undefined> {
+    const [conversation] = await db
+      .update(conversations)
+      .set(updates)
+      .where(eq(conversations.id, id))
+      .returning();
+    return conversation || undefined;
+  }
+
+  async deleteConversation(id: number): Promise<boolean> {
+    // Delete associated messages first
+    await db.delete(messages).where(eq(messages.conversationId, id));
+    
+    // Delete conversation
+    const result = await db.delete(conversations).where(eq(conversations.id, id));
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  async getMessages(conversationId: number): Promise<Message[]> {
+    return await db.select().from(messages)
+      .where(eq(messages.conversationId, conversationId))
+      .orderBy(messages.createdAt);
+  }
+
+  async createMessage(insertMessage: InsertMessage): Promise<Message> {
+    const [message] = await db
+      .insert(messages)
+      .values(insertMessage)
+      .returning();
+    return message;
+  }
+
+  async deleteMessage(id: number): Promise<boolean> {
+    const result = await db.delete(messages).where(eq(messages.id, id));
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  async getWorkPackages(): Promise<WorkPackage[]> {
+    return await db.select().from(workPackages).orderBy(workPackages.createdAt);
+  }
+
+  async getWorkPackagesByCwa(cwaId: string): Promise<WorkPackage[]> {
+    return await db.select().from(workPackages)
+      .where(eq(workPackages.cwaId, cwaId))
+      .orderBy(workPackages.createdAt);
+  }
+
+  async getWorkPackage(id: number): Promise<WorkPackage | undefined> {
+    const [workPackage] = await db.select().from(workPackages).where(eq(workPackages.id, id));
+    return workPackage || undefined;
+  }
+
+  async createWorkPackage(insertWorkPackage: InsertWorkPackage): Promise<WorkPackage> {
+    const [workPackage] = await db
+      .insert(workPackages)
+      .values(insertWorkPackage)
+      .returning();
+    return workPackage;
+  }
+
+  async updateWorkPackage(id: number, updates: Partial<WorkPackage>): Promise<WorkPackage | undefined> {
+    const [workPackage] = await db
+      .update(workPackages)
+      .set(updates)
+      .where(eq(workPackages.id, id))
+      .returning();
+    return workPackage || undefined;
+  }
+
+  async deleteWorkPackage(id: number): Promise<boolean> {
+    const result = await db.delete(workPackages).where(eq(workPackages.id, id));
+    return (result.rowCount ?? 0) > 0;
+  }
+}
+
+export const storage = new DatabaseStorage();

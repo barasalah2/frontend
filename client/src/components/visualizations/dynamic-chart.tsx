@@ -19,7 +19,9 @@ interface DynamicChartProps {
 
 const COLORS = [
   '#10b981', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6', 
-  '#06b6d4', '#f97316', '#6b7280', '#ec4899', '#84cc16'
+  '#06b6d4', '#f97316', '#6b7280', '#ec4899', '#84cc16',
+  '#f472b6', '#14b8a6', '#fb7185', '#22d3ee', '#a78bfa',
+  '#fbbf24', '#f87171', '#34d399', '#60a5fa', '#c084fc'
 ];
 
 // Transform functions for different chart types
@@ -144,6 +146,30 @@ function processBarChart(data: any[], spec: VisualizationSpec): any[] {
   const xTransform = spec.transform_x || spec.transform;
   const yTransform = spec.transform_y || spec.transform;
   
+  // Handle aggregate_sum transform for y-axis
+  if (yTransform === 'aggregate_sum' && yColumn) {
+    // First, calculate sums for all groups
+    const sums = data.reduce((acc, item) => {
+      const key = item[xColumn] || 'Unknown';
+      const value = parseFloat(String(item[yColumn]).replace(/[^0-9.-]/g, '')) || 0;
+      acc[key] = (acc[key] || 0) + value;
+      return acc;
+    }, {} as Record<string, number>);
+    
+    let result = Object.entries(sums).map(([name, value]) => ({ 
+      [xColumn]: name, 
+      [yColumn]: value 
+    }));
+    
+    // Apply topk to the aggregated results if specified
+    if (xTransform && xTransform.startsWith('topk:')) {
+      const k = parseInt(xTransform.split(':')[1]) || 10;
+      result = result.sort((a, b) => b[yColumn] - a[yColumn]).slice(0, k);
+    }
+    
+    return result;
+  }
+  
   // If y-transform is count OR if the title contains "Count", count occurrences by x-column
   if (yTransform === 'count' || spec.transform === 'count' || spec.title?.includes('Count')) {
     let processedData = data;
@@ -200,6 +226,7 @@ function processBarChart(data: any[], spec: VisualizationSpec): any[] {
     return Object.entries(counts).map(([name, value]) => ({ [xColumn]: name, count: value }));
   }
   
+  // Legacy support for aggregate_sum in the transform field
   if (spec.transform === 'aggregate_sum' && yColumn) {
     const sums = data.reduce((acc, item) => {
       const key = item[xColumn] || 'Unknown';
@@ -312,25 +339,47 @@ function processScatterChart(data: any[], spec: VisualizationSpec): any[] {
   
   if (!xColumn || !yColumn || data.length === 0) return [];
   
-  // For scatter plots, we typically want raw values
-  return data.map(item => {
+  // Check if both columns are dates
+  const isXDate = xColumn.includes('date') || xColumn.includes('start') || xColumn.includes('finish');
+  const isYDate = yColumn.includes('date') || yColumn.includes('start') || yColumn.includes('finish');
+  
+  // For scatter plots with dates, we need special handling
+  return data.map((item, index) => {
     let xValue = item[xColumn];
     let yValue = item[yColumn];
     
-    // Try to parse dates for x-axis if it looks like a date
-    if (xColumn.includes('date') || xColumn.includes('start') || xColumn.includes('finish')) {
+    // Handle date columns - convert to timestamps for scatter plots
+    if (isXDate && xValue) {
       try {
         const date = new Date(xValue);
         if (!isNaN(date.getTime())) {
-          xValue = date.getTime(); // Use timestamp for scatter plot
+          xValue = date.getTime(); // Use timestamp for proper scatter plot positioning
         }
       } catch (e) {
         // Keep original value if not a valid date
       }
     }
     
-    // Try to parse numbers for y-axis
-    if (typeof yValue === 'string') {
+    if (isYDate && yValue) {
+      try {
+        const date = new Date(yValue);
+        if (!isNaN(date.getTime())) {
+          yValue = date.getTime(); // Use timestamp for proper scatter plot positioning
+        }
+      } catch (e) {
+        // Keep original value if not a valid date
+      }
+    }
+    
+    // Try to parse numbers for non-date columns
+    if (!isXDate && typeof xValue === 'string') {
+      const parsed = parseFloat(xValue.replace(/[^0-9.-]/g, ''));
+      if (!isNaN(parsed)) {
+        xValue = parsed;
+      }
+    }
+    
+    if (!isYDate && typeof yValue === 'string') {
       const parsed = parseFloat(yValue.replace(/[^0-9.-]/g, ''));
       if (!isNaN(parsed)) {
         yValue = parsed;
@@ -338,8 +387,11 @@ function processScatterChart(data: any[], spec: VisualizationSpec): any[] {
     }
     
     return {
-      [xColumn]: xValue,
-      [yColumn]: yValue
+      x: xValue,
+      y: yValue,
+      originalX: item[xColumn],
+      originalY: item[yColumn],
+      index: index
     };
   });
 }
@@ -408,7 +460,7 @@ export function DynamicChart({ data, specs }: DynamicChartProps) {
           <h3 className="text-lg font-semibold mb-4 text-workpack-text dark:text-white">
             {chart.title}
           </h3>
-          <div className="h-64 w-full">
+          <div className="h-80 w-full">
             <ResponsiveContainer width="100%" height="100%">
               {chart.type === 'pie' ? (
                 <PieChart>
@@ -429,16 +481,20 @@ export function DynamicChart({ data, specs }: DynamicChartProps) {
                   <Tooltip content={<CustomTooltip />} />
                 </PieChart>
               ) : chart.type === 'bar' ? (
-                <BarChart data={chart.data} margin={{ top: 20, right: 30, left: 20, bottom: 60 }}>
+                <BarChart data={chart.data} margin={{ top: 20, right: 30, left: 40, bottom: 100 }}>
                   <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
                   <XAxis 
                     dataKey={chart.x} 
                     tick={{ fontSize: 12 }}
                     angle={-45}
                     textAnchor="end"
-                    height={80}
+                    height={100}
+                    interval={0}
                   />
-                  <YAxis />
+                  <YAxis 
+                    tick={{ fontSize: 12 }}
+                    width={60}
+                  />
                   <Tooltip content={<CustomTooltip />} />
                   <Bar dataKey={chart.transform_y === 'count' || chart.transform === 'count' || chart.title?.includes('Count') ? 'count' : chart.y || 'count'} radius={[4, 4, 0, 0]}>
                     {chart.data.map((entry: any, dataIndex: number) => (
@@ -447,50 +503,119 @@ export function DynamicChart({ data, specs }: DynamicChartProps) {
                   </Bar>
                 </BarChart>
               ) : chart.type === 'line' ? (
-                <LineChart data={chart.data} margin={{ top: 20, right: 30, left: 20, bottom: 60 }}>
+                <LineChart data={chart.data} margin={{ top: 20, right: 30, left: 40, bottom: 100 }}>
                   <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
                   <XAxis 
                     dataKey={chart.x} 
                     tick={{ fontSize: 12 }}
                     angle={-45}
                     textAnchor="end"
-                    height={80}
+                    height={100}
+                    interval={0}
                   />
-                  <YAxis />
+                  <YAxis 
+                    tick={{ fontSize: 12 }}
+                    width={60}
+                  />
                   <Tooltip content={<CustomTooltip />} />
                   <Line 
                     type="monotone" 
                     dataKey={chart.transform_y === 'count' || chart.transform === 'count' || chart.title?.includes('Count') ? 'count' : chart.y || 'count'} 
-                    stroke={COLORS[0]} 
-                    strokeWidth={2}
-                    dot={{ fill: COLORS[0] }}
+                    stroke={COLORS[1]} 
+                    strokeWidth={3}
+                    dot={{ fill: COLORS[1], strokeWidth: 2, r: 4 }}
+                    activeDot={{ r: 6, fill: COLORS[1] }}
                   />
                 </LineChart>
               ) : chart.type === 'scatter' ? (
-                <ScatterChart data={chart.data} margin={{ top: 20, right: 30, left: 20, bottom: 60 }}>
+                <ScatterChart data={chart.data} margin={{ top: 20, right: 30, left: 40, bottom: 100 }}>
                   <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
                   <XAxis 
-                    dataKey={chart.x} 
+                    dataKey="x"
+                    type="number"
+                    domain={['dataMin', 'dataMax']}
                     tick={{ fontSize: 12 }}
+                    tickFormatter={(value) => {
+                      // Format timestamps back to readable dates
+                      const isXDate = chart.x?.includes('date') || chart.x?.includes('start') || chart.x?.includes('finish');
+                      if (isXDate && typeof value === 'number') {
+                        try {
+                          return new Date(value).toLocaleDateString('en-US', { 
+                            month: 'short', 
+                            day: 'numeric'
+                          });
+                        } catch (e) {
+                          return value;
+                        }
+                      }
+                      return value;
+                    }}
                     angle={-45}
                     textAnchor="end"
-                    height={80}
+                    height={100}
+                    width={80}
                   />
-                  <YAxis />
-                  <Tooltip content={<CustomTooltip />} />
-                  <Scatter dataKey={chart.y} fill={COLORS[0]} />
+                  <YAxis 
+                    dataKey="y"
+                    type="number"
+                    domain={['dataMin', 'dataMax']}
+                    tick={{ fontSize: 12 }}
+                    tickFormatter={(value) => {
+                      // Format timestamps back to readable dates
+                      const isYDate = chart.y?.includes('date') || chart.y?.includes('start') || chart.y?.includes('finish');
+                      if (isYDate && typeof value === 'number') {
+                        try {
+                          return new Date(value).toLocaleDateString('en-US', { 
+                            month: 'short', 
+                            day: 'numeric'
+                          });
+                        } catch (e) {
+                          return value;
+                        }
+                      }
+                      return value;
+                    }}
+                    width={80}
+                  />
+                  <Tooltip 
+                    content={({ active, payload }) => {
+                      if (active && payload && payload.length) {
+                        const data = payload[0].payload;
+                        return (
+                          <div className="bg-white dark:bg-slate-800 p-3 border border-gray-200 dark:border-slate-700 rounded-lg shadow-lg">
+                            <p className="text-sm font-semibold text-workpack-text dark:text-white">
+                              {chart.x}: {data.originalX}
+                            </p>
+                            <p className="text-sm text-workpack-text dark:text-white">
+                              {chart.y}: {data.originalY}
+                            </p>
+                          </div>
+                        );
+                      }
+                      return null;
+                    }}
+                  />
+                  <Scatter dataKey="y" fill={COLORS[0]}>
+                    {chart.data.map((entry: any, dataIndex: number) => (
+                      <Cell key={`cell-${dataIndex}`} fill={COLORS[dataIndex % COLORS.length]} />
+                    ))}
+                  </Scatter>
                 </ScatterChart>
               ) : chart.type === 'histogram' ? (
-                <BarChart data={chart.data} margin={{ top: 20, right: 30, left: 20, bottom: 60 }}>
+                <BarChart data={chart.data} margin={{ top: 20, right: 30, left: 40, bottom: 100 }}>
                   <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
                   <XAxis 
                     dataKey={chart.x || chart.y} 
                     tick={{ fontSize: 12 }}
                     angle={-45}
                     textAnchor="end"
-                    height={80}
+                    height={100}
+                    interval={0}
                   />
-                  <YAxis />
+                  <YAxis 
+                    tick={{ fontSize: 12 }}
+                    width={60}
+                  />
                   <Tooltip content={<CustomTooltip />} />
                   <Bar dataKey="count" radius={[4, 4, 0, 0]}>
                     {chart.data.map((entry: any, dataIndex: number) => (

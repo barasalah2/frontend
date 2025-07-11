@@ -63,9 +63,20 @@ export function ConversationSidebar({
 
   const formatTimeAgo = (date: Date | string) => {
     try {
-      const dateObj = typeof date === 'string' ? new Date(date) : date;
-      if (!dateObj || isNaN(dateObj.getTime())) {
-        return "Unknown";
+      // Handle both Date objects and ISO string dates
+      let dateObj: Date;
+      if (typeof date === 'string') {
+        dateObj = new Date(date);
+      } else if (date instanceof Date) {
+        dateObj = date;
+      } else {
+        // If date is undefined or null, use current time
+        return "Just now";
+      }
+      
+      // Check if date is valid
+      if (isNaN(dateObj.getTime())) {
+        return "Just now";
       }
       
       const now = new Date();
@@ -75,10 +86,13 @@ export function ConversationSidebar({
       if (diffHours < 1) return "Just now";
       if (diffHours < 24) return `${diffHours}h ago`;
       if (diffHours < 168) return `${Math.floor(diffHours / 24)}d ago`;
-      return dateObj.toLocaleDateString();
+      return dateObj.toLocaleDateString('en-US', { 
+        month: 'short', 
+        day: 'numeric' 
+      });
     } catch (error) {
       console.warn('Error formatting date:', error);
-      return "Unknown";
+      return "Just now";
     }
   };
 
@@ -192,7 +206,7 @@ export function ConversationSidebar({
                     </span>
                     <div className="flex items-center space-x-1">
                       <span className="text-xs workpack-slate dark:text-slate-400">
-                        {formatTimeAgo(conversation.updatedAt)}
+                        {formatTimeAgo(conversation.updatedAt || conversation.createdAt)}
                       </span>
                       <Button
                         variant="ghost"

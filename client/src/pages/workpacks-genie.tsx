@@ -26,9 +26,11 @@ export default function WorkpacksGenie() {
   // Load initial conversation or create one
   useEffect(() => {
     if (conversations.length > 0 && !selectedConversationId) {
-      setSelectedConversationId(conversations[0].id);
+      const mostRecent = conversations[0];
+      setSelectedConversationId(mostRecent.id);
+      loadConversation(mostRecent.id);
     }
-  }, [conversations, selectedConversationId]);
+  }, [conversations, selectedConversationId, loadConversation]);
 
   const handleNewConversation = async () => {
     const conversation = await createConversation({
@@ -41,14 +43,23 @@ export default function WorkpacksGenie() {
   };
 
   const handleSelectConversation = (conversationId: number) => {
-    setSelectedConversationId(conversationId);
-    loadConversation(conversationId);
+    if (conversationId !== selectedConversationId) {
+      setSelectedConversationId(conversationId);
+      loadConversation(conversationId);
+    }
   };
 
   const handleDeleteConversation = async (conversationId: number) => {
     await deleteConversation(conversationId);
     if (selectedConversationId === conversationId) {
-      setSelectedConversationId(null);
+      // Select the first available conversation or null
+      const remaining = conversations.filter(c => c.id !== conversationId);
+      if (remaining.length > 0) {
+        setSelectedConversationId(remaining[0].id);
+        loadConversation(remaining[0].id);
+      } else {
+        setSelectedConversationId(null);
+      }
     }
   };
 
