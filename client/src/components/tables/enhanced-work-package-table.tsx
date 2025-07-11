@@ -192,13 +192,15 @@ export function EnhancedWorkPackageTable({ data }: EnhancedWorkPackageTableProps
       
       // Check if the response has the expected structure
       if (result && result.visualizations && Array.isArray(result.visualizations)) {
-        console.log('Setting visualization specs:', result.visualizations);
-        setVisualizationSpecs(result.visualizations);
+        // Validate and filter chart specifications
+        const validSpecs = validateChartSpecs(result.visualizations);
+        console.log('Setting visualization specs:', validSpecs);
+        setVisualizationSpecs(validSpecs);
         setShowVisualizations(true);
 
         toast({
           title: "Visualization Generated",
-          description: `Generated ${result.visualizations.length} visualization(s)`,
+          description: `Generated ${validSpecs.length} visualization(s)`,
         });
       } else {
         console.error('Invalid response format:', result);
@@ -217,6 +219,37 @@ export function EnhancedWorkPackageTable({ data }: EnhancedWorkPackageTableProps
     } finally {
       setIsGeneratingViz(false);
     }
+  };
+
+  // Validate chart specifications to filter out inappropriate combinations
+  const validateChartSpecs = (specs: any[]) => {
+    return specs.filter(spec => {
+      // Check for scatter plots with text columns
+      if (spec.type === 'scatter') {
+        const isXTextColumn = spec.x && (spec.x.includes('description') || spec.x.includes('name') || spec.x.includes('label'));
+        const isYTextColumn = spec.y && (spec.y.includes('description') || spec.y.includes('name') || spec.y.includes('label'));
+        
+        if (isXTextColumn || isYTextColumn) {
+          console.warn(`Filtering out invalid scatter plot: ${spec.x} vs ${spec.y} (text columns not suitable for scatter plots)`);
+          return false;
+        }
+      }
+      
+      // Check for histograms with text columns unless using count transform
+      if (spec.type === 'histogram') {
+        const column = spec.x || spec.y;
+        const isTextColumn = column && (column.includes('description') || column.includes('name') || column.includes('label'));
+        const hasCountTransform = spec.transform_x === 'count' || spec.transform_y === 'count' || 
+                                 spec.transform === 'count' || spec.transform_x?.startsWith('topk:');
+        
+        if (isTextColumn && !hasCountTransform) {
+          console.warn(`Filtering out invalid histogram: ${column} (text column without count transform)`);
+          return false;
+        }
+      }
+      
+      return true;
+    });
   };
 
   const detectColumnType = (columnName: string, data: any[]) => {

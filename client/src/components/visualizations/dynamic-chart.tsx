@@ -34,7 +34,7 @@ function applyTransform(data: any[], column: string, transform: string | null): 
       acc[key] = (acc[key] || 0) + 1;
       return acc;
     }, {} as Record<string, number>);
-    return Object.entries(counts).map(([name, value]) => ({ [column]: name, count: value }));
+    return Object.entries(counts).map(([name, value]) => ({ [column]: name, count: value, value: value }));
   }
   
   if (transform === 'aggregate_sum') {
@@ -45,7 +45,28 @@ function applyTransform(data: any[], column: string, transform: string | null): 
       acc[key] = (acc[key] || 0) + value;
       return acc;
     }, {} as Record<string, number>);
-    return Object.entries(sums).map(([name, value]) => ({ [column]: name, sum: value }));
+    return Object.entries(sums).map(([name, value]) => ({ [column]: name, sum: value, value: value, count: 1 }));
+  }
+  
+  if (transform === 'aggregate_mean') {
+    // For aggregate_mean, calculate average values by group
+    const groups = data.reduce((acc, item) => {
+      const key = item[column] || 'Unknown';
+      const value = parseFloat(String(item[column]).replace(/[^0-9.-]/g, '')) || 0;
+      if (!acc[key]) {
+        acc[key] = { sum: 0, count: 0 };
+      }
+      acc[key].sum += value;
+      acc[key].count += 1;
+      return acc;
+    }, {} as Record<string, { sum: number; count: number }>);
+    
+    return Object.entries(groups).map(([name, group]) => ({ 
+      [column]: name, 
+      mean: group.sum / group.count, 
+      value: group.sum / group.count, 
+      count: group.count 
+    }));
   }
   
   if (transform.startsWith('date_group:')) {
@@ -170,6 +191,37 @@ function processBarChart(data: any[], spec: VisualizationSpec): any[] {
     return result;
   }
   
+  // Handle aggregate_mean transform for y-axis
+  if (yTransform === 'aggregate_mean' && yColumn) {
+    // Calculate means for all groups
+    const groups = data.reduce((acc, item) => {
+      const key = item[xColumn] || 'Unknown';
+      const value = parseFloat(String(item[yColumn]).replace(/[^0-9.-]/g, '')) || 0;
+      if (!acc[key]) {
+        acc[key] = { sum: 0, count: 0 };
+      }
+      acc[key].sum += value;
+      acc[key].count += 1;
+      return acc;
+    }, {} as Record<string, { sum: number; count: number }>);
+    
+    let result = Object.entries(groups).map(([name, group]) => ({ 
+      [xColumn]: name, 
+      [yColumn]: group.sum / group.count,
+      mean: group.sum / group.count,
+      value: group.sum / group.count,
+      count: group.count
+    }));
+    
+    // Apply topk to the aggregated results if specified
+    if (xTransform && xTransform.startsWith('topk:')) {
+      const k = parseInt(xTransform.split(':')[1]) || 10;
+      result = result.sort((a, b) => b[yColumn] - a[yColumn]).slice(0, k);
+    }
+    
+    return result;
+  }
+  
   // If y-transform is count OR if the title contains "Count", count occurrences by x-column
   if (yTransform === 'count' || spec.transform === 'count' || spec.title?.includes('Count')) {
     let processedData = data;
@@ -211,7 +263,7 @@ function processBarChart(data: any[], spec: VisualizationSpec): any[] {
     
     const result = Object.entries(counts)
       .sort(([a], [b]) => a.localeCompare(b))
-      .map(([name, value]) => ({ [xColumn]: name, count: value }));
+      .map(([name, value]) => ({ [xColumn]: name, count: value, value: value }));
     
     return result;
   }
@@ -223,7 +275,7 @@ function processBarChart(data: any[], spec: VisualizationSpec): any[] {
       acc[key] = (acc[key] || 0) + 1;
       return acc;
     }, {} as Record<string, number>);
-    return Object.entries(counts).map(([name, value]) => ({ [xColumn]: name, count: value }));
+    return Object.entries(counts).map(([name, value]) => ({ [xColumn]: name, count: value, value: value }));
   }
   
   // Legacy support for aggregate_sum in the transform field
@@ -234,7 +286,29 @@ function processBarChart(data: any[], spec: VisualizationSpec): any[] {
       acc[key] = (acc[key] || 0) + value;
       return acc;
     }, {} as Record<string, number>);
-    return Object.entries(sums).map(([name, value]) => ({ [xColumn]: name, [yColumn]: value }));
+    return Object.entries(sums).map(([name, value]) => ({ [xColumn]: name, [yColumn]: value, value: value, count: 1 }));
+  }
+  
+  // Legacy support for aggregate_mean in the transform field
+  if (spec.transform === 'aggregate_mean' && yColumn) {
+    const groups = data.reduce((acc, item) => {
+      const key = item[xColumn] || 'Unknown';
+      const value = parseFloat(String(item[yColumn]).replace(/[^0-9.-]/g, '')) || 0;
+      if (!acc[key]) {
+        acc[key] = { sum: 0, count: 0 };
+      }
+      acc[key].sum += value;
+      acc[key].count += 1;
+      return acc;
+    }, {} as Record<string, { sum: number; count: number }>);
+    
+    return Object.entries(groups).map(([name, group]) => ({ 
+      [xColumn]: name, 
+      [yColumn]: group.sum / group.count, 
+      mean: group.sum / group.count,
+      value: group.sum / group.count, 
+      count: group.count 
+    }));
   }
   
   // Note: topk is now handled in the count section above
@@ -330,6 +404,39 @@ function processLineChart(data: any[], spec: VisualizationSpec): any[] {
     return Object.values(grouped).sort((a, b) => a[xColumn].localeCompare(b[xColumn]));
   }
   
+  if (xTransform === 'aggregate_mean' && yColumn) {
+    // For aggregate_mean, we need to group by x and calculate average y values
+    const grouped = data.reduce((acc, item) => {
+      const xValue = item[xColumn];
+      const yValue = parseFloat(String(item[yColumn])) || 0;
+      
+      if (xValue) {
+        let key = xValue;
+        // Handle date grouping if it's a date column
+        if (xColumn.includes('date') || xColumn.includes('start') || xColumn.includes('finish')) {
+          try {
+            const date = new Date(xValue);
+            if (!isNaN(date.getTime())) {
+              key = `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}`;
+            }
+          } catch (e) {
+            // Keep original value if not a valid date
+          }
+        }
+        
+        if (!acc[key]) {
+          acc[key] = { [xColumn]: key, sum: 0, count: 0 };
+        }
+        acc[key].sum += yValue;
+        acc[key].count += 1;
+        acc[key][yColumn] = acc[key].sum / acc[key].count; // Calculate mean
+      }
+      return acc;
+    }, {} as Record<string, any>);
+    
+    return Object.values(grouped).sort((a, b) => a[xColumn].localeCompare(b[xColumn]));
+  }
+  
   return applyTransform(data, xColumn, xTransform || spec.transform);
 }
 
@@ -338,6 +445,16 @@ function processScatterChart(data: any[], spec: VisualizationSpec): any[] {
   const yColumn = spec.y;
   
   if (!xColumn || !yColumn || data.length === 0) return [];
+  
+  // Validate that both columns are suitable for scatter plots
+  // Text-heavy columns like descriptions should not be used for scatter plots
+  const isXTextColumn = xColumn.includes('description') || xColumn.includes('name') || xColumn.includes('label');
+  const isYTextColumn = yColumn.includes('description') || yColumn.includes('name') || yColumn.includes('label');
+  
+  if (isXTextColumn || isYTextColumn) {
+    console.warn(`Scatter plot not suitable for text columns: ${xColumn} vs ${yColumn}`);
+    return [];
+  }
   
   // Check if both columns are dates
   const isXDate = xColumn.includes('date') || xColumn.includes('start') || xColumn.includes('finish');
@@ -400,7 +517,15 @@ function processHistogram(data: any[], spec: VisualizationSpec): any[] {
   const column = spec.x || spec.y;
   if (!column || data.length === 0) return [];
   
-  return applyTransform(data, column, spec.transform || 'bin:auto');
+  const transform = spec.transform_x || spec.transform || 'bin:auto';
+  const transformed = applyTransform(data, column, transform);
+  
+  // Ensure histogram data has consistent structure
+  return transformed.map(item => ({
+    ...item,
+    value: item.value || item.count || item[column] || 0,
+    count: item.count || 1
+  }));
 }
 
 export function DynamicChart({ data, specs }: DynamicChartProps) {
@@ -496,7 +621,7 @@ export function DynamicChart({ data, specs }: DynamicChartProps) {
                     width={60}
                   />
                   <Tooltip content={<CustomTooltip />} />
-                  <Bar dataKey={chart.transform_y === 'count' || chart.transform === 'count' || chart.title?.includes('Count') ? 'count' : chart.y || 'count'} radius={[4, 4, 0, 0]}>
+                  <Bar dataKey={chart.transform_y === 'count' || chart.transform === 'count' || chart.title?.includes('Count') || chart.title?.includes('Distribution') ? 'count' : chart.y || 'value'} radius={[4, 4, 0, 0]}>
                     {chart.data.map((entry: any, dataIndex: number) => (
                       <Cell key={`cell-${dataIndex}`} fill={COLORS[dataIndex % COLORS.length]} />
                     ))}
@@ -520,7 +645,7 @@ export function DynamicChart({ data, specs }: DynamicChartProps) {
                   <Tooltip content={<CustomTooltip />} />
                   <Line 
                     type="monotone" 
-                    dataKey={chart.transform_y === 'count' || chart.transform === 'count' || chart.title?.includes('Count') ? 'count' : chart.y || 'count'} 
+                    dataKey={chart.transform_y === 'count' || chart.transform === 'count' || chart.title?.includes('Count') || chart.title?.includes('Distribution') ? 'count' : chart.y || 'value'} 
                     stroke={COLORS[1]} 
                     strokeWidth={3}
                     dot={{ fill: COLORS[1], strokeWidth: 2, r: 4 }}
