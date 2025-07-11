@@ -2,10 +2,11 @@ import { useState } from "react";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { WorkPackageTable } from "@/components/tables/work-package-table";
+import { EnhancedWorkPackageTable } from "@/components/tables/enhanced-work-package-table";
 import { GanttChart } from "@/components/visualizations/gantt-chart";
+import { ProgressChart } from "@/components/visualizations/progress-chart";
 import { type Message } from "@shared/schema";
-import { Bot, User, Download, Maximize2, AlertCircle } from "lucide-react";
+import { Bot, User, Download, Maximize2, AlertCircle, BarChart3, EyeOff } from "lucide-react";
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { exportToExcel } from "@/lib/excel-export";
@@ -16,6 +17,7 @@ interface ChatMessageProps {
 
 export function ChatMessage({ message }: ChatMessageProps) {
   const [showFullscreen, setShowFullscreen] = useState(false);
+  const [showCharts, setShowCharts] = useState(false);
   const isBot = message.sender === "bot";
   const hasTableData = message.data && message.data.table;
 
@@ -98,43 +100,73 @@ export function ChatMessage({ message }: ChatMessageProps) {
                     <AlertCircle className="h-4 w-4 mr-2 text-workpack-orange" />
                     Work Package Analysis
                   </h4>
-                  <Button
-                    onClick={handleExportTable}
-                    size="sm"
-                    className="bg-workpack-green hover:bg-green-700 text-white"
-                  >
-                    <Download className="h-3 w-3 mr-1" />
-                    Export Excel
-                  </Button>
+                  <div className="flex space-x-2">
+                    <Button
+                      onClick={() => setShowCharts(!showCharts)}
+                      size="sm"
+                      variant="outline"
+                      className="text-workpack-blue border-workpack-blue hover:bg-workpack-blue hover:text-white"
+                    >
+                      {showCharts ? <EyeOff className="h-3 w-3 mr-1" /> : <BarChart3 className="h-3 w-3 mr-1" />}
+                      {showCharts ? 'Hide Charts' : 'Show Charts'}
+                    </Button>
+                    <Button
+                      onClick={handleExportTable}
+                      size="sm"
+                      className="bg-workpack-green hover:bg-green-700 text-white"
+                    >
+                      <Download className="h-3 w-3 mr-1" />
+                      Export Excel
+                    </Button>
+                  </div>
                 </div>
-                <WorkPackageTable data={message.data.table} />
+                <EnhancedWorkPackageTable 
+                  data={message.data.table} 
+                />
               </div>
             </motion.div>
           )}
 
-          {/* Gantt Chart Visualization */}
-          {shouldShowGantt && hasTableData && (
+          {/* Chart Visualizations */}
+          {showCharts && hasTableData && (
             <motion.div
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.4 }}
-              className="mt-4"
+              className="mt-4 space-y-4"
             >
+              {/* Progress Chart */}
               <div className="bg-gray-50 dark:bg-slate-900 rounded-lg p-4">
                 <div className="flex items-center justify-between mb-3">
                   <h4 className="font-semibold workpack-text dark:text-white">
-                    Project Timeline - Gantt Chart
+                    Data Distribution - Pie Chart
                   </h4>
-                  <div className="flex space-x-2">
-                    <Button
-                      onClick={() => setShowFullscreen(true)}
-                      size="sm"
-                      variant="outline"
-                    >
-                      <Maximize2 className="h-3 w-3 mr-1" />
-                      Full Screen
-                    </Button>
-                  </div>
+                  <Button
+                    onClick={() => setShowFullscreen(true)}
+                    size="sm"
+                    variant="outline"
+                  >
+                    <Maximize2 className="h-3 w-3 mr-1" />
+                    Full Screen
+                  </Button>
+                </div>
+                <ProgressChart data={message.data.table} type="pie" />
+              </div>
+              
+              {/* Gantt Chart / Timeline */}
+              <div className="bg-gray-50 dark:bg-slate-900 rounded-lg p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className="font-semibold workpack-text dark:text-white">
+                    Timeline & Analysis
+                  </h4>
+                  <Button
+                    onClick={() => setShowFullscreen(true)}
+                    size="sm"
+                    variant="outline"
+                  >
+                    <Maximize2 className="h-3 w-3 mr-1" />
+                    Full Screen
+                  </Button>
                 </div>
                 <GanttChart data={message.data.table} />
               </div>

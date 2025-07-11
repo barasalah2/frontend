@@ -1,8 +1,10 @@
 import { useState, useMemo } from "react";
-import { ChevronUp, ChevronDown, Search, Filter, X } from "lucide-react";
+import { ChevronUp, ChevronDown, Search, Filter, X, BarChart3 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useToast } from "@/hooks/use-toast";
+import { DynamicChart } from "@/components/visualizations/dynamic-chart";
 
 interface EnhancedWorkPackageTableProps {
   data: any[];
@@ -17,6 +19,10 @@ export function EnhancedWorkPackageTable({ data }: EnhancedWorkPackageTableProps
   const [filterField, setFilterField] = useState<string>("all");
   const [filterValue, setFilterValue] = useState<string>("all");
   const [showFilters, setShowFilters] = useState(false);
+  const [isGeneratingViz, setIsGeneratingViz] = useState(false);
+  const [visualizationSpecs, setVisualizationSpecs] = useState<any[]>([]);
+  const [showVisualizations, setShowVisualizations] = useState(false);
+  const { toast } = useToast();
 
   const columns = useMemo(() => {
     if (!data || data.length === 0) return [];
@@ -100,6 +106,104 @@ export function EnhancedWorkPackageTable({ data }: EnhancedWorkPackageTableProps
     setSortDirection(null);
   };
 
+  const generateVisualization = async () => {
+    if (!data || data.length === 0) {
+      toast({
+        title: "No Data",
+        description: "Cannot generate visualization without data",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsGeneratingViz(true);
+    try {
+      // Prepare column information
+      const columnInfo = columns.map(col => ({
+        name: col,
+        type: detectColumnType(col, data)
+      }));
+
+      // Get first 10 rows as data snippet
+      const dataSnippet = data.slice(0, 10);
+
+      // Send to your AI backend - using relative URL since both frontend and backend are on same domain
+      const AI_BACKEND_URL = '/api/datavis';
+
+      const requestPayload = {
+        columns: columnInfo,
+        data_snippet: dataSnippet
+      };
+
+      console.log('Sending to AI backend:', AI_BACKEND_URL);
+      console.log('Request payload:', requestPayload);
+      
+      const response = await fetch(AI_BACKEND_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestPayload)
+      });
+
+      console.log('Response status:', response.status);
+      console.log('Response headers:', response.headers);
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('AI backend error:', errorText);
+        throw new Error(`AI backend error: ${response.status} - ${errorText}`);
+      }
+
+      const result = await response.json();
+      console.log('Received visualization data:', result);
+      
+      // Check if the response has the expected structure
+      if (result && result.visualizations && Array.isArray(result.visualizations)) {
+        setVisualizationSpecs(result.visualizations);
+        setShowVisualizations(true);
+
+        toast({
+          title: "Visualization Generated",
+          description: `Generated ${result.visualizations.length} visualization(s)`,
+        });
+      } else {
+        console.error('Invalid response format:', result);
+        throw new Error('Invalid response format from AI backend');
+      }
+
+    } catch (error) {
+      console.error('Error generating visualization:', error);
+      console.error('Error details:', error.message);
+      console.error('AI Backend URL:', AI_BACKEND_URL);
+      
+      toast({
+        title: "Error",
+        description: `Failed to generate visualization: ${error.message}`,
+        variant: "destructive",
+      });
+    } finally {
+      setIsGeneratingViz(false);
+    }
+  };
+
+  const detectColumnType = (columnName: string, data: any[]) => {
+    // Check if it's a time/date column
+    if (columnName.toLowerCase().includes('date') || columnName.toLowerCase().includes('time')) {
+      return 'time';
+    }
+    
+    // Check sample values for numeric content
+    const sampleValues = data.slice(0, 10).map(row => row[columnName]).filter(v => v != null);
+    const numericValues = sampleValues.filter(v => !isNaN(Number(v)));
+    
+    if (numericValues.length > sampleValues.length * 0.8) {
+      return 'numeric';
+    }
+    
+    return 'categorical';
+  };
+
   const hasActiveFilters = searchTerm || filterField !== "all" || filterValue !== "all" || sortField;
 
   if (!data || data.length === 0) {
@@ -134,12 +238,34 @@ export function EnhancedWorkPackageTable({ data }: EnhancedWorkPackageTableProps
           </Button>
         </div>
         
-        {hasActiveFilters && (
-          <Button variant="outline" size="sm" onClick={clearFilters}>
-            <X className="h-4 w-4 mr-2" />
-            Clear
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={generateVisualization}
+            disabled={isGeneratingViz}
+          >
+            <BarChart3 className="h-4 w-4 mr-2" />
+            {isGeneratingViz ? 'Generating...' : 'Generate Charts'}
           </Button>
-        )}
+          
+          {showVisualizations && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowVisualizations(false)}
+            >
+              Hide Charts
+            </Button>
+          )}
+          
+          {hasActiveFilters && (
+            <Button variant="outline" size="sm" onClick={clearFilters}>
+              <X className="h-4 w-4 mr-2" />
+              Clear
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* Advanced Filters */}
@@ -235,6 +361,16 @@ export function EnhancedWorkPackageTable({ data }: EnhancedWorkPackageTableProps
       {filteredAndSortedData.length === 0 && data.length > 0 && (
         <div className="text-center py-8 text-gray-500 dark:text-gray-400">
           No records match your current filters
+        </div>
+      )}
+
+      {/* Dynamic Visualizations */}
+      {showVisualizations && visualizationSpecs.length > 0 && (
+        <div className="mt-6">
+          <h3 className="text-lg font-semibold mb-4 text-workpack-text dark:text-white">
+            Generated Visualizations
+          </h3>
+          <DynamicChart data={data} specs={visualizationSpecs} />
         </div>
       )}
     </div>

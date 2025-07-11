@@ -74,6 +74,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // DataVisAgent endpoint
+  app.post("/api/datavis", async (req, res) => {
+    try {
+      const { columns, data_snippet } = req.body;
+      
+      if (!columns || !data_snippet) {
+        return res.status(400).json({ error: "Columns and data_snippet are required" });
+      }
+
+      // Generate visualization configuration based on data analysis
+      const visualizations = generateVisualizationConfig(columns, data_snippet);
+      
+      res.json({ visualizations });
+    } catch (error) {
+      console.error("Error in /api/datavis:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
   // Conversation management
   app.get("/api/conversations", async (req, res) => {
     try {
@@ -199,4 +218,69 @@ function generateAIResponse(question: string): string {
   }
   
   return "I've analyzed your query and can provide detailed insights about work packages, schedules, resource allocation, and project progress. Please specify what aspect of the AWP system you'd like me to focus on.";
+}
+
+function generateVisualizationConfig(columns: any[], data_snippet: any[]) {
+  // Analyze column types
+  const columnTypes = columns.map(col => {
+    const sampleValues = data_snippet.map(row => row[col.name]).filter(v => v != null);
+    
+    // Check if it's a time/date column
+    if (col.name.toLowerCase().includes('date') || col.name.toLowerCase().includes('time')) {
+      return { ...col, type: 'time' };
+    }
+    
+    // Check if it's numeric
+    const numericValues = sampleValues.filter(v => !isNaN(Number(v)));
+    if (numericValues.length > sampleValues.length * 0.8) {
+      return { ...col, type: 'numeric' };
+    }
+    
+    // Otherwise categorical
+    return { ...col, type: 'categorical' };
+  });
+
+  const visualizations = [];
+  
+  // Find time + numeric combinations for line charts
+  const timeColumns = columnTypes.filter(col => col.type === 'time');
+  const numericColumns = columnTypes.filter(col => col.type === 'numeric');
+  const categoricalColumns = columnTypes.filter(col => col.type === 'categorical');
+  
+  if (timeColumns.length > 0 && numericColumns.length > 0) {
+    visualizations.push({
+      type: 'line',
+      x: timeColumns[0].name,
+      y: numericColumns[0].name,
+      color: null,
+      title: `${numericColumns[0].name} over Time`,
+      transform: 'count'
+    });
+  }
+  
+  // Categorical distributions
+  if (categoricalColumns.length > 0) {
+    visualizations.push({
+      type: 'pie',
+      x: null,
+      y: categoricalColumns[0].name,
+      color: null,
+      title: `Distribution of ${categoricalColumns[0].name}`,
+      transform: 'count'
+    });
+  }
+  
+  // Numeric + categorical for bar charts
+  if (numericColumns.length > 0 && categoricalColumns.length > 0) {
+    visualizations.push({
+      type: 'bar',
+      x: categoricalColumns[0].name,
+      y: numericColumns[0].name,
+      color: null,
+      title: `${numericColumns[0].name} by ${categoricalColumns[0].name}`,
+      transform: 'aggregate_sum'
+    });
+  }
+  
+  return visualizations;
 }

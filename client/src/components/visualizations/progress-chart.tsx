@@ -8,16 +8,61 @@ interface ProgressChartProps {
 
 export function ProgressChart({ data, type = 'pie' }: ProgressChartProps) {
   const chartData = useMemo(() => {
-    if (!data || data.length === 0) return [];
+    if (!data || data.length === 0) {
+      return [];
+    }
     
-    // Group by status
+    // Get all column names from the first row
+    const columns = Object.keys(data[0]);
+    
+    // Find status-like columns (containing 'status', 'state', 'phase', 'progress', 'cwp')
+    const statusColumns = columns.filter(col => 
+      col.toLowerCase().includes('status') || 
+      col.toLowerCase().includes('state') ||
+      col.toLowerCase().includes('phase') ||
+      col.toLowerCase().includes('progress') ||
+      col.toLowerCase().includes('cwp')
+    );
+    
+    // Use first status column, or fall back to any categorical column
+    let groupColumn = statusColumns[0];
+    if (!groupColumn) {
+      // Find categorical columns (columns with limited unique values)
+      const categoricalColumns = columns.filter(col => {
+        // Skip ID and description columns
+        if (col.toLowerCase().includes('id') || col.toLowerCase().includes('description')) {
+          return false;
+        }
+        
+        const sampleValues = data.slice(0, 20).map(item => item[col]);
+        const uniqueValues = new Set(sampleValues);
+        return uniqueValues.size < 15 && uniqueValues.size > 1;
+      });
+      groupColumn = categoricalColumns[0];
+    }
+    
+    if (!groupColumn) {
+      return [];
+    }
+    
+    // Group by the selected column
     const statusCounts = data.reduce((acc, item) => {
-      const status = item.Status || item.status || 'Unknown';
+      const status = item[groupColumn] || 'Unknown';
       acc[status] = (acc[status] || 0) + 1;
       return acc;
     }, {} as Record<string, number>);
 
-    return Object.entries(statusCounts).map(([status, count]) => ({
+    let sortedEntries = Object.entries(statusCounts)
+      .sort(([, a], [, b]) => b - a); // Sort by count descending
+    
+    // Limit to 20 data points, group others as "Others"
+    if (sortedEntries.length > 20) {
+      const top19 = sortedEntries.slice(0, 19);
+      const othersCount = sortedEntries.slice(19).reduce((sum, [, count]) => sum + count, 0);
+      sortedEntries = [...top19, ['Others', othersCount]];
+    }
+
+    return sortedEntries.map(([status, count]) => ({
       name: status,
       value: count,
       percentage: Math.round((count / data.length) * 100)

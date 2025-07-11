@@ -62,6 +62,8 @@ export default function WorkpacksGenie() {
     console.log("Opening visualization...");
   };
 
+
+
   return (
     <div className="flex h-screen overflow-hidden bg-workpack-bg-light dark:bg-workpack-bg-dark">
       {/* Sidebar */}
@@ -150,7 +152,10 @@ export default function WorkpacksGenie() {
           ) : (
             <>
               {messages.map((message) => (
-                <ChatMessage key={message.id} message={message} />
+                <ChatMessage 
+                  key={message.id} 
+                  message={message} 
+                />
               ))}
               {isLoading && <TypingIndicator />}
             </>
