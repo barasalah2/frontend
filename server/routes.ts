@@ -193,6 +193,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Data visualization endpoint
+  app.post("/api/datavis", async (req, res) => {
+    try {
+      const { columns, data_snippet } = req.body;
+      
+      if (!columns || !Array.isArray(columns)) {
+        return res.status(400).json({ error: "Columns array is required" });
+      }
+      
+      if (!data_snippet || !Array.isArray(data_snippet)) {
+        return res.status(400).json({ error: "Data snippet array is required" });
+      }
+
+      const visualizations = generateVisualizationConfig(columns, data_snippet);
+      
+      res.json({
+        visualizations: visualizations
+      });
+    } catch (error) {
+      console.error("Error generating visualization:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }

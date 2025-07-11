@@ -3,6 +3,8 @@ import { ChevronUp, ChevronDown, Search, Filter, X, BarChart3 } from "lucide-rea
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { DynamicChart } from "@/components/visualizations/dynamic-chart";
 
@@ -22,6 +24,8 @@ export function EnhancedWorkPackageTable({ data }: EnhancedWorkPackageTableProps
   const [isGeneratingViz, setIsGeneratingViz] = useState(false);
   const [visualizationSpecs, setVisualizationSpecs] = useState<any[]>([]);
   const [showVisualizations, setShowVisualizations] = useState(false);
+  const [showMessageDialog, setShowMessageDialog] = useState(false);
+  const [userMessage, setUserMessage] = useState("");
   const { toast } = useToast();
 
   const columns = useMemo(() => {
@@ -106,6 +110,10 @@ export function EnhancedWorkPackageTable({ data }: EnhancedWorkPackageTableProps
     setSortDirection(null);
   };
 
+  const handleGenerateVisualization = () => {
+    setShowMessageDialog(true);
+  };
+
   const generateVisualization = async () => {
     console.log('Generate visualization button clicked!');
     console.log('Data:', data);
@@ -133,12 +141,14 @@ export function EnhancedWorkPackageTable({ data }: EnhancedWorkPackageTableProps
       // Get first 10 rows as data snippet
       const dataSnippet = data.slice(0, 10);
 
-      // Send to your AI backend - using relative URL since both frontend and backend are on same domain
-      const AI_BACKEND_URL = '/api/datavis';
+      // Send to your external AI backend app
+      const AI_BACKEND_URL = 'http://localhost:5000/api/datavis';
 
       const requestPayload = {
-        columns: columnInfo,
-        data_snippet: dataSnippet
+        columns: columnInfo.map(col => ({ name: col.name })), // Only send column names as per your spec
+        data_snippet: dataSnippet,
+        total_rows: data.length,
+        ...(userMessage.trim() && { message: userMessage.trim() })
       };
 
       console.log('Sending to AI backend:', AI_BACKEND_URL);
@@ -161,11 +171,28 @@ export function EnhancedWorkPackageTable({ data }: EnhancedWorkPackageTableProps
         throw new Error(`AI backend error: ${response.status} - ${errorText}`);
       }
 
-      const result = await response.json();
+      let result = await response.json();
       console.log('Received visualization data:', result);
+      console.log('Type of result:', typeof result);
+      
+      // Handle case where response is a JSON string instead of object
+      if (typeof result === 'string') {
+        try {
+          result = JSON.parse(result);
+          console.log('Parsed JSON string to object:', result);
+        } catch (parseError) {
+          console.error('Failed to parse JSON string response:', parseError);
+          throw new Error('Invalid JSON response from AI backend');
+        }
+      }
+      
+      console.log('Final processed result:', result);
+      console.log('Has visualizations?', result && result.visualizations);
+      console.log('Is array?', Array.isArray(result?.visualizations));
       
       // Check if the response has the expected structure
       if (result && result.visualizations && Array.isArray(result.visualizations)) {
+        console.log('Setting visualization specs:', result.visualizations);
         setVisualizationSpecs(result.visualizations);
         setShowVisualizations(true);
 
@@ -181,7 +208,6 @@ export function EnhancedWorkPackageTable({ data }: EnhancedWorkPackageTableProps
     } catch (error) {
       console.error('Error generating visualization:', error);
       console.error('Error details:', error.message);
-      console.error('AI Backend URL:', AI_BACKEND_URL);
       
       toast({
         title: "Error",
@@ -248,7 +274,7 @@ export function EnhancedWorkPackageTable({ data }: EnhancedWorkPackageTableProps
           <Button
             variant="outline"
             size="sm"
-            onClick={generateVisualization}
+            onClick={handleGenerateVisualization}
             disabled={isGeneratingViz}
           >
             <BarChart3 className="h-4 w-4 mr-2" />
@@ -379,6 +405,48 @@ export function EnhancedWorkPackageTable({ data }: EnhancedWorkPackageTableProps
           <DynamicChart data={data} specs={visualizationSpecs} />
         </div>
       )}
+
+      {/* Message Dialog */}
+      <Dialog open={showMessageDialog} onOpenChange={setShowMessageDialog}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Add Message for Chart Generation</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium mb-2">
+                Optional Message (e.g., "Focus on status trends", "Show quarterly data")
+              </label>
+              <Textarea
+                placeholder="Enter your message to guide the chart generation..."
+                value={userMessage}
+                onChange={(e) => setUserMessage(e.target.value)}
+                className="min-h-[100px]"
+              />
+            </div>
+            <div className="flex justify-end space-x-2">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setShowMessageDialog(false);
+                  setUserMessage("");
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={async () => {
+                  setShowMessageDialog(false);
+                  await generateVisualization();
+                }}
+                disabled={isGeneratingViz}
+              >
+                {isGeneratingViz ? 'Generating...' : 'Generate Charts'}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
