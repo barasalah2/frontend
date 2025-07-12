@@ -1200,8 +1200,8 @@ function processStackedBarChart(data: any[], spec: VisualizationSpec): any[] {
   // Get transforms
   const yTransform = spec.transform_y || spec.transform;
   
-  // Handle case where y column doesn't exist but we have series - count occurrences
-  if (!yColumn || !data.some(item => item[yColumn] !== undefined && item[yColumn] !== '')) {
+  // Handle count transform - count occurrences grouped by x and series
+  if (yTransform === 'count' || !yColumn || !data.some(item => item[yColumn] !== undefined && item[yColumn] !== '')) {
     if (seriesColumn) {
       // Group by x-column and series, count occurrences
       const grouped = data.reduce((acc, item) => {
@@ -1218,7 +1218,19 @@ function processStackedBarChart(data: any[], spec: VisualizationSpec): any[] {
         return acc;
       }, {} as Record<string, any>);
       
-      return Object.values(grouped);
+      // Ensure all series values exist for each x value (fill missing with 0)
+      const allSeriesValues = [...new Set(data.map(item => item[seriesColumn] || 'Unknown'))];
+      const result = Object.values(grouped);
+      
+      result.forEach(item => {
+        allSeriesValues.forEach(seriesValue => {
+          if (!(seriesValue in item)) {
+            item[seriesValue] = 0;
+          }
+        });
+      });
+      
+      return result;
     } else {
       // Simple count by x-column
       const counts = data.reduce((acc, item) => {
@@ -1236,44 +1248,7 @@ function processStackedBarChart(data: any[], spec: VisualizationSpec): any[] {
   }
   
   // Handle y column with transform
-  if (yTransform === 'count' || spec.title?.includes('Count')) {
-    // Count occurrences grouped by x-column and series
-    const grouped = data.reduce((acc, item) => {
-      const xValue = item[xColumn] || 'Unknown';
-      const seriesValue = seriesColumn ? (item[seriesColumn] || 'Unknown') : 'default';
-      
-      if (!acc[xValue]) {
-        acc[xValue] = { [xColumn]: xValue, count: 0, value: 0 };
-      }
-      
-      if (seriesColumn) {
-        acc[xValue][seriesValue] = (acc[xValue][seriesValue] || 0) + 1;
-      } else {
-        acc[xValue].value += 1;
-      }
-      acc[xValue].count += 1;
-      return acc;
-    }, {} as Record<string, any>);
-    
-    // For stacked bar charts, ensure all series values exist for each x value
-    if (seriesColumn) {
-      const allSeriesValues = [...new Set(data.map(item => item[seriesColumn] || 'Unknown'))];
-      const result = Object.values(grouped);
-      
-      // Make sure each x-value has all series values (fill missing with 0)
-      result.forEach(item => {
-        allSeriesValues.forEach(seriesValue => {
-          if (!(seriesValue in item)) {
-            item[seriesValue] = 0;
-          }
-        });
-      });
-      
-      return result;
-    }
-    
-    return Object.values(grouped);
-  }
+
   
   // Original logic for when y column exists and needs to be summed
   const grouped = data.reduce((acc, item) => {

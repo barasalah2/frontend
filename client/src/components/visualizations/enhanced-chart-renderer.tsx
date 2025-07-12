@@ -19,6 +19,7 @@ import {
   ReferenceLine,
   Legend
 } from 'recharts';
+import TreemapChart from './treemap-chart';
 
 const COLORS = [
   '#10b981', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6', 
@@ -71,25 +72,27 @@ export function EnhancedChartRenderer({ chart }: EnhancedChartProps) {
       case 'pie':
       case 'donut':
         return (
-          <PieChart>
-            <Pie
-              data={chart.data}
-              cx="50%"
-              cy="50%"
-              labelLine={false}
-              label={({ name, percentage }) => `${name}: ${percentage}%`}
-              outerRadius={100}
-              innerRadius={chart.type === 'donut' ? 50 : 0}
-              fill="#8884d8"
-              dataKey="value"
-            >
+          <div style={{ width: '100%', height: '500px' }}>
+            <PieChart width={800} height={500}>
+              <Pie
+                data={chart.data}
+                cx="50%"
+                cy="50%"
+                labelLine={false}
+                label={({ name, percentage }) => `${name}: ${percentage}%`}
+                outerRadius={150}
+                innerRadius={chart.type === 'donut' ? 75 : 0}
+                fill="#8884d8"
+                dataKey="value"
+              >
               {chart.data.map((entry: any, index: number) => (
                 <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
               ))}
             </Pie>
             <Tooltip content={<CustomTooltip />} />
             <Legend />
-          </PieChart>
+            </PieChart>
+          </div>
         );
 
       case 'bar':
@@ -104,12 +107,13 @@ export function EnhancedChartRenderer({ chart }: EnhancedChartProps) {
 
 
         return (
-          <BarChart 
-            width={800}
-            height={320}
-            data={chart.data} 
-            margin={{ top: 20, right: 30, left: isHorizontal ? 120 : 40, bottom: isHorizontal ? 20 : 100 }}
-          >
+          <div style={{ width: '100%', height: '450px' }}>
+            <BarChart 
+              width={800}
+              height={450}
+              data={chart.data} 
+              margin={{ top: 20, right: 30, left: isHorizontal ? 120 : 40, bottom: isHorizontal ? 20 : 100 }}
+            >
             <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
             {isHorizontal ? (
               <>
@@ -155,49 +159,79 @@ export function EnhancedChartRenderer({ chart }: EnhancedChartProps) {
                 <Cell key={`cell-${dataIndex}`} fill={COLORS[dataIndex % COLORS.length]} />
               ))}
             </Bar>
-          </BarChart>
+            </BarChart>
+          </div>
         );
 
       case 'stacked_bar':
       case 'grouped_bar':
         const stackId = chart.type === 'stacked_bar' ? "stack" : undefined;
-        const seriesKeys = chart.data.length > 0 ? 
-          Object.keys(chart.data[0]).filter(key => 
-            key !== chart.x && 
-            key !== 'name' && 
-            key !== 'count' && 
-            key !== 'value' &&
-            typeof chart.data[0][key] === 'number'
-          ) : [];
+        
+        // For stacked bar charts, find all numeric columns that have meaningful data
+        const allNumericKeys = chart.data.length > 0 ? 
+          Object.keys(chart.data[0]).filter(key => {
+            const value = chart.data[0][key];
+            return key !== chart.x && 
+                   key !== 'name' && 
+                   key !== 'count' && 
+                   key !== 'value' &&
+                   typeof value === 'number' &&
+                   !isNaN(value);
+          }) : [];
+        
+        // Filter to only include series that have non-zero values in at least one data point
+        const seriesKeys = allNumericKeys.filter(key => 
+          chart.data.some(item => item[key] > 0)
+        );
+        
+        console.log('Stacked bar processed data:', chart.data.slice(0, 2));
+        console.log('Series values found:', seriesKeys);
         
         return (
-          <BarChart data={chart.data} margin={{ top: 20, right: 30, left: 40, bottom: 100 }}>
-            <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
-            <XAxis 
-              dataKey={chart.x} 
-              tick={{ fontSize: 11 }}
-              angle={-45}
-              textAnchor="end"
-              height={100}
-              label={{ value: chart.x, position: 'insideBottom', offset: -5 }}
-            />
-            <YAxis 
-              tick={{ fontSize: 12 }} 
-              width={60}
-              label={{ value: 'Count', angle: -90, position: 'insideLeft' }}
-            />
+          <div style={{ width: '100%', height: '500px' }}>
+            <BarChart 
+              data={chart.data} 
+              width={800} 
+              height={500}
+              margin={{ top: 20, right: 30, left: 40, bottom: 100 }}
+            >
+              <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
+              <XAxis 
+                dataKey={chart.x} 
+                tick={{ fontSize: 11 }}
+                angle={-45}
+                textAnchor="end"
+                height={100}
+                label={{ value: chart.x, position: 'insideBottom', offset: -5 }}
+              />
+              <YAxis 
+                tick={{ fontSize: 12 }} 
+                width={60}
+                domain={[0, 'dataMax']}
+                label={{ value: chart.y || 'Count', angle: -90, position: 'insideLeft' }}
+              />
             <Tooltip content={<CustomTooltip />} />
             <Legend />
-            {seriesKeys.map((key, index) => (
+            {seriesKeys.length > 0 ? (
+              seriesKeys.map((key, index) => (
+                <Bar
+                  key={key}
+                  dataKey={key}
+                  stackId={stackId}
+                  fill={COLORS[index % COLORS.length]}
+                  radius={chart.type === 'stacked_bar' && index === seriesKeys.length - 1 ? [4, 4, 0, 0] : undefined}
+                />
+              ))
+            ) : (
+              // Fallback: if no series detected, show count/value
               <Bar
-                key={key}
-                dataKey={key}
-                stackId={stackId}
-                fill={COLORS[index % COLORS.length]}
-                radius={chart.type === 'stacked_bar' && index === seriesKeys.length - 1 ? [4, 4, 0, 0] : undefined}
+                dataKey="count"
+                fill={COLORS[0]}
+                radius={[4, 4, 0, 0]}
               />
-            ))}
-          </BarChart>
+            )}
+            </BarChart>
+          </div>
         );
 
       case 'line':
@@ -224,42 +258,78 @@ export function EnhancedChartRenderer({ chart }: EnhancedChartProps) {
           const seriesValues = [...new Set(chart.data.map(item => item[seriesKey]).filter(Boolean))];
           
           return (
-            <LineChart data={restructuredData} margin={{ top: 20, right: 30, left: 40, bottom: 100 }}>
-              <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
-              <XAxis 
-                dataKey={xAxisKey} 
-                tick={{ fontSize: 11 }}
-                angle={-45}
-                textAnchor="end"
-                height={100}
-                label={{ value: chart.x, position: 'insideBottom', offset: -5 }}
-              />
-              <YAxis 
-                tick={{ fontSize: 12 }} 
-                width={60}
-                label={{ value: chart.y || 'Value', angle: -90, position: 'insideLeft' }}
-              />
-              <Tooltip content={<CustomTooltip />} />
-              <Legend />
-              {seriesValues.map((seriesValue, index) => (
-                <Line
-                  key={seriesValue}
-                  type="monotone"
-                  dataKey={String(seriesValue)}
-                  stroke={COLORS[index % COLORS.length]}
-                  strokeWidth={3}
-                  name={String(seriesValue)}
-                  dot={{ r: 5, fill: COLORS[index % COLORS.length] }}
-                  activeDot={{ r: 7, stroke: COLORS[index % COLORS.length] }}
-                  connectNulls={false}
+            <div style={{ width: '100%', height: '450px' }}>
+              <LineChart data={restructuredData} width={800} height={450} margin={{ top: 20, right: 30, left: 40, bottom: 100 }}>
+                <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
+                <XAxis 
+                  dataKey={xAxisKey} 
+                  tick={{ fontSize: 11 }}
+                  angle={-45}
+                  textAnchor="end"
+                  height={100}
+                  label={{ value: chart.x, position: 'insideBottom', offset: -5 }}
                 />
-              ))}
-            </LineChart>
+                <YAxis 
+                  tick={{ fontSize: 12 }} 
+                  width={60}
+                  label={{ value: chart.y || 'Value', angle: -90, position: 'insideLeft' }}
+                />
+                <Tooltip content={<CustomTooltip />} />
+                <Legend />
+                {seriesValues.map((seriesValue, index) => (
+                  <Line
+                    key={seriesValue}
+                    type="monotone"
+                    dataKey={String(seriesValue)}
+                    stroke={COLORS[index % COLORS.length]}
+                    strokeWidth={3}
+                    name={String(seriesValue)}
+                    dot={{ r: 5, fill: COLORS[index % COLORS.length] }}
+                    activeDot={{ r: 7, stroke: COLORS[index % COLORS.length] }}
+                    connectNulls={false}
+                  />
+                ))}
+              </LineChart>
+            </div>
           );
         } else {
           // Single line chart
           return (
-            <LineChart data={chart.data} margin={{ top: 20, right: 30, left: 40, bottom: 100 }}>
+            <div style={{ width: '100%', height: '450px' }}>
+              <LineChart data={chart.data} width={800} height={450} margin={{ top: 20, right: 30, left: 40, bottom: 100 }}>
+                <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
+                <XAxis 
+                  dataKey={chart.x} 
+                  tick={{ fontSize: 11 }}
+                  angle={-45}
+                  textAnchor="end"
+                  height={100}
+                  label={{ value: chart.x, position: 'insideBottom', offset: -5 }}
+                />
+                <YAxis 
+                  tick={{ fontSize: 12 }} 
+                  width={60}
+                  label={{ value: chart.y || 'Value', angle: -90, position: 'insideLeft' }}
+                />
+                <Tooltip content={<CustomTooltip />} />
+                <Legend />
+                <Line
+                  type="monotone"
+                  dataKey={chart.y || 'value'}
+                  stroke={COLORS[0]}
+                  strokeWidth={3}
+                  dot={{ r: 5, fill: COLORS[0] }}
+                  activeDot={{ r: 7 }}
+                />
+              </LineChart>
+            </div>
+          );
+        }
+
+      case 'area':
+        return (
+          <div style={{ width: '100%', height: '450px' }}>
+            <AreaChart data={chart.data} width={800} height={450} margin={{ top: 20, right: 30, left: 40, bottom: 100 }}>
               <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
               <XAxis 
                 dataKey={chart.x} 
@@ -276,46 +346,16 @@ export function EnhancedChartRenderer({ chart }: EnhancedChartProps) {
               />
               <Tooltip content={<CustomTooltip />} />
               <Legend />
-              <Line
+              <Area
                 type="monotone"
                 dataKey={chart.y || 'value'}
                 stroke={COLORS[0]}
-                strokeWidth={3}
-                dot={{ r: 5, fill: COLORS[0] }}
-                activeDot={{ r: 7 }}
+                fill={COLORS[0]}
+                fillOpacity={0.6}
+                strokeWidth={2}
               />
-            </LineChart>
-          );
-        }
-
-      case 'area':
-        return (
-          <AreaChart data={chart.data} margin={{ top: 20, right: 30, left: 40, bottom: 100 }}>
-            <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
-            <XAxis 
-              dataKey={chart.x} 
-              tick={{ fontSize: 11 }}
-              angle={-45}
-              textAnchor="end"
-              height={100}
-              label={{ value: chart.x, position: 'insideBottom', offset: -5 }}
-            />
-            <YAxis 
-              tick={{ fontSize: 12 }} 
-              width={60}
-              label={{ value: chart.y || 'Value', angle: -90, position: 'insideLeft' }}
-            />
-            <Tooltip content={<CustomTooltip />} />
-            <Legend />
-            <Area
-              type="monotone"
-              dataKey={chart.y || 'value'}
-              stroke={COLORS[0]}
-              fill={COLORS[0]}
-              fillOpacity={0.6}
-              strokeWidth={2}
-            />
-          </AreaChart>
+            </AreaChart>
+          </div>
         );
 
       case 'scatter':
@@ -344,69 +384,73 @@ export function EnhancedChartRenderer({ chart }: EnhancedChartProps) {
           const xValues = [...new Set(chart.data.map(item => item[chart.x]))];
           
           return (
-            <ScatterChart data={chart.data} margin={{ top: 20, right: 130, left: 40, bottom: 100 }}>
-              <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
-              <XAxis 
-                dataKey={chart.x}
-                type="category"
-                tick={{ fontSize: 11, angle: -45, textAnchor: "end" }}
-                name={chart.x}
-                label={{ value: chart.x, position: 'insideBottom', offset: -5 }}
-                height={100}
-                interval={0}
-                domain={xValues}
-              />
-              <YAxis 
-                dataKey={chart.y}
-                type="number"
-                tick={{ fontSize: 12 }}
-                width={60}
-                name={chart.y}
-                domain={['dataMin', 'dataMax']}
-                label={{ value: chart.y, angle: -90, position: 'insideLeft' }}
-              />
-              <Tooltip content={<CustomTooltip />} />
-              <Legend />
-              {seriesValues.map((seriesValue, index) => (
-                <Scatter
-                  key={seriesValue}
-                  name={String(seriesValue)}
-                  data={chart.data.filter(item => item[chart.series] === seriesValue)}
-                  fill={COLORS[index % COLORS.length]}
+            <div style={{ width: '100%', height: '450px' }}>
+              <ScatterChart data={chart.data} width={800} height={450} margin={{ top: 20, right: 130, left: 40, bottom: 100 }}>
+                <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
+                <XAxis 
+                  dataKey={chart.x}
+                  type="category"
+                  tick={{ fontSize: 11, angle: -45, textAnchor: "end" }}
+                  name={chart.x}
+                  label={{ value: chart.x, position: 'insideBottom', offset: -5 }}
+                  height={100}
+                  interval={0}
+                  domain={xValues}
                 />
-              ))}
-            </ScatterChart>
+                <YAxis 
+                  dataKey={chart.y}
+                  type="number"
+                  tick={{ fontSize: 12 }}
+                  width={60}
+                  name={chart.y}
+                  domain={['dataMin', 'dataMax']}
+                  label={{ value: chart.y, angle: -90, position: 'insideLeft' }}
+                />
+                <Tooltip content={<CustomTooltip />} />
+                <Legend />
+                {seriesValues.map((seriesValue, index) => (
+                  <Scatter
+                    key={seriesValue}
+                    name={String(seriesValue)}
+                    data={chart.data.filter(item => item[chart.series] === seriesValue)}
+                    fill={COLORS[index % COLORS.length]}
+                  />
+                ))}
+              </ScatterChart>
+            </div>
           );
         } else {
           // Single series scatter plot
           return (
-            <ScatterChart data={chart.data} margin={{ top: 20, right: 30, left: 40, bottom: 100 }}>
-              <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
-              <XAxis 
-                dataKey={chart.x}
-                type={hasDateData ? "category" : "number"}
-                tick={{ fontSize: 11, angle: hasDateData ? -45 : 0, textAnchor: hasDateData ? "end" : "middle" }}
-                name={chart.x}
-                domain={hasDateData ? undefined : ['dataMin', 'dataMax']}
-                label={{ value: chart.x, position: 'insideBottom', offset: -5 }}
-                height={hasDateData ? 100 : undefined}
-                interval={hasDateData ? 0 : undefined}
-              />
-              <YAxis 
-                dataKey={chart.y}
-                type="number"
-                tick={{ fontSize: 12 }}
-                width={60}
-                name={chart.y}
-                domain={['dataMin', 'dataMax']}
-                label={{ value: chart.y, angle: -90, position: 'insideLeft' }}
-              />
-              <Tooltip content={<CustomTooltip />} />
-              <Scatter
-                dataKey={chart.y}
-                fill={COLORS[0]}
-              />
-            </ScatterChart>
+            <div style={{ width: '100%', height: '450px' }}>
+              <ScatterChart data={chart.data} width={800} height={450} margin={{ top: 20, right: 30, left: 40, bottom: 100 }}>
+                <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
+                <XAxis 
+                  dataKey={chart.x}
+                  type={hasDateData ? "category" : "number"}
+                  tick={{ fontSize: 11, angle: hasDateData ? -45 : 0, textAnchor: hasDateData ? "end" : "middle" }}
+                  name={chart.x}
+                  domain={hasDateData ? undefined : ['dataMin', 'dataMax']}
+                  label={{ value: chart.x, position: 'insideBottom', offset: -5 }}
+                  height={hasDateData ? 100 : undefined}
+                  interval={hasDateData ? 0 : undefined}
+                />
+                <YAxis 
+                  dataKey={chart.y}
+                  type="number"
+                  tick={{ fontSize: 12 }}
+                  width={60}
+                  name={chart.y}
+                  domain={['dataMin', 'dataMax']}
+                  label={{ value: chart.y, angle: -90, position: 'insideLeft' }}
+                />
+                <Tooltip content={<CustomTooltip />} />
+                <Scatter
+                  dataKey={chart.y}
+                  fill={COLORS[0]}
+                />
+              </ScatterChart>
+            </div>
           );
         }
 
@@ -420,28 +464,30 @@ export function EnhancedChartRenderer({ chart }: EnhancedChartProps) {
         }
         
         return (
-          <BarChart data={chart.data} margin={{ top: 20, right: 30, left: 40, bottom: 100 }}>
-            <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
-            <XAxis 
-              dataKey={histogramXKey} 
-              tick={{ fontSize: 11 }}
-              angle={-45}
-              textAnchor="end"
-              height={100}
-              label={{ value: histogramXKey, position: 'insideBottom', offset: -5 }}
-            />
-            <YAxis 
-              tick={{ fontSize: 12 }} 
-              width={60}
-              label={{ value: 'Frequency', angle: -90, position: 'insideLeft' }}
-            />
-            <Tooltip content={<CustomTooltip />} />
-            <Bar
-              dataKey="count"
-              fill={COLORS[0]}
-              radius={[4, 4, 0, 0]}
-            />
-          </BarChart>
+          <div style={{ width: '100%', height: '450px' }}>
+            <BarChart data={chart.data} width={800} height={450} margin={{ top: 20, right: 30, left: 40, bottom: 100 }}>
+              <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
+              <XAxis 
+                dataKey={histogramXKey} 
+                tick={{ fontSize: 11 }}
+                angle={-45}
+                textAnchor="end"
+                height={100}
+                label={{ value: histogramXKey, position: 'insideBottom', offset: -5 }}
+              />
+              <YAxis 
+                tick={{ fontSize: 12 }} 
+                width={60}
+                label={{ value: 'Frequency', angle: -90, position: 'insideLeft' }}
+              />
+              <Tooltip content={<CustomTooltip />} />
+              <Bar
+                dataKey="count"
+                fill={COLORS[0]}
+                radius={[4, 4, 0, 0]}
+              />
+            </BarChart>
+          </div>
         );
 
       case 'waterfall':
@@ -496,10 +542,12 @@ export function EnhancedChartRenderer({ chart }: EnhancedChartProps) {
           </BarChart>
         );
 
+      case 'treemap':
+        return <TreemapChart chart={chart} />;
+
       case 'box':
       case 'violin':
       case 'heatmap':
-      case 'treemap':
       case 'sunburst':
       case 'radar':
         // For advanced chart types not directly supported by recharts,

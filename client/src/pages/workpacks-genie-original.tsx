@@ -265,13 +265,13 @@ export default function WorkpacksGenie() {
   };
 
   return (
-    <div className="flex h-screen overflow-hidden bg-workpack-bg-light dark:bg-workpack-bg-dark">
+    <div className="h-screen flex overflow-hidden bg-workpack-bg-light dark:bg-workpack-bg-dark">
       {/* Sidebar */}
       <motion.div
         initial={false}
         animate={{ width: sidebarOpen ? 320 : 0 }}
         transition={{ duration: 0.3 }}
-        className="overflow-hidden"
+        className="overflow-hidden flex-shrink-0"
       >
         <ConversationSidebar
           conversations={conversations}
@@ -283,9 +283,9 @@ export default function WorkpacksGenie() {
       </motion.div>
 
       {/* Main Content */}
-      <div className="flex-1 flex flex-col">
+      <div className="flex-1 flex flex-col min-w-0">
         {/* Header */}
-        <div className="bg-white dark:bg-slate-800 border-b border-gray-200 dark:border-slate-700 px-6 py-4">
+        <div className="flex-shrink-0 bg-white dark:bg-slate-800 border-b border-gray-200 dark:border-slate-700 px-6 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-4">
               <Button
@@ -326,7 +326,7 @@ export default function WorkpacksGenie() {
         </div>
 
         {/* Messages Area */}
-        <div className="flex-1 overflow-y-auto chat-scroll p-6 space-y-6" style={{ maxHeight: 'calc(100vh - 200px)' }}>
+        <div className="flex-1 overflow-y-auto chat-scroll p-6 space-y-6">
           <AnimatePresence initial={false}>
             {messages.map((msg) => {
               const isBot = msg.sender === 'bot';
@@ -449,7 +449,9 @@ export default function WorkpacksGenie() {
         </div>
 
         {/* Chat Input */}
-        <ChatInput onSendMessage={sendMessage} disabled={isLoading} />
+        <div className="flex-shrink-0">
+          <ChatInput onSendMessage={sendMessage} disabled={isLoading} />
+        </div>
       </div>
     </div>
   );
