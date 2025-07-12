@@ -15,6 +15,14 @@ export function useChat(conversationId: number | null) {
   const [localStorageKey, setLocalStorageKey] = useState(0); // Force re-render trigger
   const queryClient = useQueryClient();
 
+  // Initialize conversationId properly
+  useEffect(() => {
+    if (conversationId !== null && conversationId !== currentConversationId) {
+      setCurrentConversationId(conversationId);
+      setLocalStorageKey(prev => prev + 1);
+    }
+  }, [conversationId, currentConversationId]);
+
   // Fetch messages for the current conversation
   const { data: apiMessages = [], isLoading: messagesLoading } = useQuery({
     queryKey: ["/api/conversations", currentConversationId, "messages"],
@@ -23,38 +31,60 @@ export function useChat(conversationId: number | null) {
 
   // Merge API messages with local storage saved charts
   const messages = useMemo(() => {
-    console.log('Rebuilding messages list. CurrentConversationId:', currentConversationId);
-    console.log('API Messages:', apiMessages.length);
+    console.log('=== REBUILDING MESSAGES LIST ===');
+    console.log('CurrentConversationId:', currentConversationId);
+    console.log('API Messages count:', apiMessages.length);
+    console.log('LocalStorageKey (trigger):', localStorageKey);
     
-    if (!currentConversationId) return [];
+    if (!currentConversationId) {
+      console.log('No conversation ID, returning empty array');
+      return [];
+    }
     
     try {
       const savedChartsJson = localStorage.getItem('savedCharts');
       console.log('Raw savedCharts from localStorage:', savedChartsJson);
       
-      const savedCharts = JSON.parse(savedChartsJson || '[]');
+      if (!savedChartsJson) {
+        console.log('No saved charts found, returning API messages only');
+        return apiMessages;
+      }
+      
+      const savedCharts = JSON.parse(savedChartsJson);
       console.log('Parsed savedCharts:', savedCharts);
       
-      const conversationCharts = savedCharts.filter((chart: any) => chart.conversationId === currentConversationId);
+      const conversationCharts = savedCharts.filter((chart: any) => {
+        console.log(`Checking chart ${chart.id}: conversationId=${chart.conversationId} vs current=${currentConversationId}`);
+        return chart.conversationId === currentConversationId;
+      });
       console.log('Charts for conversation', currentConversationId, ':', conversationCharts);
       
+      if (conversationCharts.length === 0) {
+        console.log('No charts for this conversation, returning API messages only');
+        return apiMessages;
+      }
+      
       // Convert saved charts to message format
-      const chartMessages = conversationCharts.map((chart: any) => ({
-        id: `chart-${chart.id}`, // Ensure unique IDs
-        conversationId: currentConversationId,
-        content: chart.title,
-        sender: "bot" as const,
-        messageType: "visualization" as const,
-        data: {
-          charts: chart.charts,
-          originalData: chart.data,
-          title: chart.title,
-          savedAt: chart.savedAt
-        },
-        createdAt: new Date(chart.savedAt)
-      }));
+      const chartMessages = conversationCharts.map((chart: any) => {
+        const chartMessage = {
+          id: `chart-${chart.id}`, // Ensure unique IDs
+          conversationId: currentConversationId,
+          content: chart.title || 'Saved Visualization',
+          sender: "bot" as const,
+          messageType: "visualization" as const,
+          data: {
+            charts: chart.charts,
+            originalData: chart.data,
+            title: chart.title || 'Saved Visualization',
+            savedAt: chart.savedAt
+          },
+          createdAt: new Date(chart.savedAt)
+        };
+        console.log('Created chart message:', chartMessage);
+        return chartMessage;
+      });
 
-      console.log('Chart messages created:', chartMessages);
+      console.log('Chart messages created:', chartMessages.length);
 
       // Combine and sort by creation time
       const allMessages = [...apiMessages, ...chartMessages];
@@ -62,7 +92,8 @@ export function useChat(conversationId: number | null) {
         new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
       );
       
-      console.log('Final sorted messages:', sortedMessages.length);
+      console.log('Final sorted messages count:', sortedMessages.length);
+      console.log('Final messages:', sortedMessages.map(m => ({ id: m.id, type: m.messageType || 'text', content: m.content.substring(0, 50) })));
       return sortedMessages;
     } catch (error) {
       console.error('Error loading saved charts:', error);
@@ -73,6 +104,48 @@ export function useChat(conversationId: number | null) {
   // Trigger refresh when conversation changes
   useEffect(() => {
     setLocalStorageKey(prev => prev + 1);
+  }, [currentConversationId]);
+
+  // Also trigger refresh when API messages are loaded to ensure saved charts are merged
+  useEffect(() => {
+    if (apiMessages.length > 0) {
+      setLocalStorageKey(prev => prev + 1);
+    }
+  }, [apiMessages.length]);
+
+  // Force refresh on initial load to ensure charts are loaded
+  useEffect(() => {
+    if (currentConversationId) {
+      // Small delay to ensure localStorage is ready
+      setTimeout(() => {
+        setLocalStorageKey(prev => prev + 1);
+      }, 100);
+    }
+  }, [currentConversationId]);
+
+  // Force refresh every second for testing (temporary)
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (currentConversationId) {
+        console.log('Forcing periodic refresh for conversation:', currentConversationId);
+        
+        // Debug localStorage content
+        const savedCharts = localStorage.getItem('savedCharts');
+        if (savedCharts) {
+          try {
+            const parsed = JSON.parse(savedCharts);
+            console.log('Periodic check - total charts:', parsed.length);
+            const forConversation = parsed.filter((chart: any) => chart.conversationId === currentConversationId);
+            console.log('Periodic check - charts for this conversation:', forConversation.length);
+          } catch (e) {
+            console.error('Error parsing saved charts:', e);
+          }
+        }
+        
+        setLocalStorageKey(prev => prev + 1);
+      }
+    }, 2000);
+    return () => clearInterval(interval);
   }, [currentConversationId]);
 
   // Add storage event listener to refresh when charts are saved
@@ -139,6 +212,8 @@ export function useChat(conversationId: number | null) {
 
   const loadConversation = useCallback((conversationId: number) => {
     setCurrentConversationId(conversationId);
+    // Force a refresh of localStorage charts when loading a conversation
+    setLocalStorageKey(prev => prev + 1);
     // The query will automatically refetch when conversationId changes
   }, []);
 

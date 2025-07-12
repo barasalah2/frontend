@@ -6,8 +6,8 @@ import { TypingIndicator } from "@/components/chat/typing-indicator";
 import { SavedChartsViewer } from "@/components/charts/saved-charts-viewer";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { useChat } from "@/hooks/use-chat";
-import { useConversations } from "@/hooks/use-conversations";
+import { useUnifiedChat } from "@/hooks/use-unified-chat";
+import { useUnifiedConversations } from "@/hooks/use-unified-conversations";
 import { Menu, Download, BarChart3 } from "lucide-react";
 import { motion } from "framer-motion";
 
@@ -15,30 +15,57 @@ export default function WorkpacksGenie() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [selectedConversationId, setSelectedConversationId] = useState<number | null>(null);
   
-  const { conversations, createConversation, deleteConversation } = useConversations();
+  // Debug selected conversation ID
+  console.log('WorkpacksGenie - selectedConversationId:', selectedConversationId);
+  
+  // Initialize storage system
+  useEffect(() => {
+    if (isInitialized) {
+      console.log('Unified storage system initialized');
+      console.log('Current conversation ID:', currentConversationId);
+      console.log('Messages count:', messages.length);
+      console.log('Charts count:', charts.length);
+    }
+  }, [isInitialized, currentConversationId, messages.length, charts.length]);
+  
+  const { conversations, createConversation, deleteConversation } = useUnifiedConversations();
   const { 
     messages, 
     isLoading, 
     sendMessage, 
-    loadConversation,
     currentConversationId,
-    conversationTitle 
-  } = useChat(selectedConversationId);
+    conversationTitle,
+    saveChart,
+    charts,
+    isInitialized
+  } = useUnifiedChat(selectedConversationId);
 
-  // Debug localStorage content
+  // Debug localStorage content and trigger refresh
   useEffect(() => {
     const savedCharts = localStorage.getItem('savedCharts');
-    console.log('WorkpacksGenie - localStorage savedCharts:', savedCharts);
-    console.log('WorkpacksGenie - selected conversation:', selectedConversationId);
-    console.log('WorkpacksGenie - current conversation:', currentConversationId);
-    console.log('WorkpacksGenie - messages count:', messages.length);
+    console.log('=== WorkpacksGenie Debug ===');
+    console.log('localStorage savedCharts (length):', savedCharts ? savedCharts.length : 0);
+    console.log('selected conversation:', selectedConversationId);
+    console.log('current conversation:', currentConversationId);
+    console.log('messages count:', messages.length);
     
     if (savedCharts) {
       try {
         const parsed = JSON.parse(savedCharts);
-        console.log('WorkpacksGenie - parsed charts:', parsed);
+        console.log('parsed charts count:', parsed.length);
         const forConversation = parsed.filter((chart: any) => chart.conversationId === selectedConversationId);
-        console.log('WorkpacksGenie - charts for this conversation:', forConversation);
+        console.log('charts for this conversation:', forConversation.length);
+        
+        // If we have charts for this conversation but no visualization messages, force refresh
+        if (forConversation.length > 0) {
+          const visualizationMessages = messages.filter(m => m.messageType === 'visualization');
+          console.log('visualization messages found:', visualizationMessages.length);
+          if (visualizationMessages.length === 0) {
+            console.log('CHARTS EXIST BUT NOT SHOWING - forcing refresh...');
+            // Force refresh of messages
+            window.dispatchEvent(new Event('chartSaved'));
+          }
+        }
       } catch (e) {
         console.error('WorkpacksGenie - error parsing charts:', e);
       }
@@ -47,19 +74,28 @@ export default function WorkpacksGenie() {
 
   // Load initial conversation or create one
   useEffect(() => {
+    console.log('Auto-select effect - conversations:', conversations.length, 'selectedConversationId:', selectedConversationId);
     if (conversations.length > 0 && !selectedConversationId) {
       const mostRecent = conversations[0];
+      console.log('Auto-selecting conversation:', mostRecent.id);
       setSelectedConversationId(mostRecent.id);
-      loadConversation(mostRecent.id);
+    } else if (conversations.length === 0 && !selectedConversationId) {
+      console.log('No conversations found, creating new one');
+      // Create a default conversation
+      createConversation({
+        title: "AWP Analysis",
+        category: "general"
+      }).then(newConv => {
+        console.log('Created new conversation:', newConv.id);
+        setSelectedConversationId(newConv.id);
+      });
     }
-  }, [conversations, selectedConversationId, loadConversation]);
+  }, [conversations, selectedConversationId, createConversation]);
 
   const handleNewConversation = async () => {
     const conversation = await createConversation({
       title: "New AWP Conversation",
-      category: "general",
-      userId: "default_user",
-      metadata: {}
+      category: "general"
     });
     setSelectedConversationId(conversation.id);
   };
@@ -67,7 +103,6 @@ export default function WorkpacksGenie() {
   const handleSelectConversation = (conversationId: number) => {
     if (conversationId !== selectedConversationId) {
       setSelectedConversationId(conversationId);
-      loadConversation(conversationId);
     }
   };
 
@@ -78,7 +113,6 @@ export default function WorkpacksGenie() {
       const remaining = conversations.filter(c => c.id !== conversationId);
       if (remaining.length > 0) {
         setSelectedConversationId(remaining[0].id);
-        loadConversation(remaining[0].id);
       } else {
         setSelectedConversationId(null);
       }
@@ -194,7 +228,7 @@ export default function WorkpacksGenie() {
                 <ChatMessage 
                   key={message.id} 
                   message={message} 
-                  conversationId={currentConversationId}
+                  conversationId={selectedConversationId}
                 />
               ))}
               {isLoading && <TypingIndicator />}

@@ -13,6 +13,7 @@ import remarkGfm from 'remark-gfm';
 import { exportToExcel } from "@/lib/excel-export";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { unifiedStorage } from "@/lib/unified-storage";
 
 interface ChatMessageProps {
   message: Message;
@@ -24,6 +25,9 @@ export function ChatMessage({ message, conversationId }: ChatMessageProps) {
   const [showCharts, setShowCharts] = useState(false);
   const [savingChart, setSavingChart] = useState(false);
   const isBot = message.sender === "bot";
+  
+  // Debug conversation ID
+  console.log('ChatMessage - conversationId:', conversationId, 'for message:', message.id);
   const hasTableData = message.data && 
     message.data.table && 
     Array.isArray(message.data.table) && 
@@ -35,6 +39,18 @@ export function ChatMessage({ message, conversationId }: ChatMessageProps) {
     message.data.charts &&
     Array.isArray(message.data.charts) &&
     message.data.charts.length > 0;
+
+  // Debug logging for visualization detection
+  if (message.messageType === "visualization" || message.message_type === "visualization") {
+    console.log('ChatMessage - Found visualization message:', {
+      id: message.id,
+      messageType: message.messageType,
+      hasData: !!message.data,
+      hasCharts: !!(message.data && message.data.charts),
+      chartsLength: message.data?.charts?.length || 0,
+      hasVisualizationData
+    });
+  }
 
 
   const { toast } = useToast();
@@ -68,33 +84,42 @@ export function ChatMessage({ message, conversationId }: ChatMessageProps) {
   const handleSaveChart = async (chartConfig: any, title: string) => {
     setSavingChart(true);
     try {
-      // Save to local storage
-      const savedCharts = JSON.parse(localStorage.getItem('savedCharts') || '[]');
-      const newChart = {
-        id: Date.now(),
-        conversationId: conversationId || 1,
+      console.log('=== SAVING CHART WITH UNIFIED STORAGE ===');
+      console.log('Chart config:', chartConfig);
+      console.log('Conversation ID:', conversationId);
+      
+      if (!conversationId) {
+        throw new Error('No conversation ID provided');
+      }
+
+      // Save using unified storage system
+      const savedChart = unifiedStorage.addChart(conversationId, {
+        title: title,
         charts: [chartConfig],
         data: hasTableData ? message.data.table : [],
-        title: title,
-        savedAt: new Date().toISOString()
-      };
-      
-      savedCharts.push(newChart);
-      localStorage.setItem('savedCharts', JSON.stringify(savedCharts));
+        metadata: {
+          savedFrom: 'chat-message',
+          messageId: message.id
+        }
+      });
+
+      console.log('Chart saved to unified storage:', savedChart);
 
       // Also save via API if conversation exists
-      if (conversationId) {
+      try {
         await apiRequest("POST", "/api/charts/save", {
           conversation_id: conversationId,
           chart_config: chartConfig,
           chart_data: hasTableData ? message.data.table : [],
           title: title
         });
+      } catch (apiError) {
+        console.warn('API save failed, but unified storage succeeded:', apiError);
       }
 
       toast({
         title: "Chart Saved",
-        description: "Chart has been saved locally and to conversation",
+        description: "Chart has been saved to conversation",
       });
 
       // Trigger a custom event to refresh the charts in the conversation

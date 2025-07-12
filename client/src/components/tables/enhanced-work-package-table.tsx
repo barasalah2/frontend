@@ -295,44 +295,70 @@ export function EnhancedWorkPackageTable({ data, conversationId }: EnhancedWorkP
     }
 
     try {
-      // Save charts to local storage
-      const savedCharts = JSON.parse(localStorage.getItem('savedCharts') || '[]');
-      const newChart = {
-        id: Date.now(),
-        conversationId: conversationId || 1,
+      console.log('=== SAVING CHARTS WITH UNIFIED STORAGE (TABLE) ===');
+      console.log('Visualization specs:', visualizationSpecs);
+      console.log('Conversation ID:', conversationId);
+      
+      const workingConversationId = conversationId || 1;
+      console.log('Using conversation ID:', workingConversationId);
+      
+      if (!conversationId) {
+        console.warn('No conversation ID provided, using fallback ID 1');
+      }
+
+      // Import unifiedStorage here to avoid circular imports
+      const { unifiedStorage } = await import('@/lib/unified-storage');
+      
+      // Check if conversation exists, if not create it
+      let conversation = unifiedStorage.getConversation(workingConversationId);
+      if (!conversation) {
+        console.log('Creating fallback conversation with ID:', workingConversationId);
+        conversation = unifiedStorage.createConversation({
+          title: "AWP Analysis",
+          category: "general",
+          userId: "default_user"
+        });
+        console.log('Created fallback conversation:', conversation.id);
+      }
+
+      // Save using unified storage system
+      const savedChart = unifiedStorage.addChart(workingConversationId, {
+        title: `Generated Charts - ${new Date().toLocaleString()}`,
         charts: visualizationSpecs,
         data: data,
-        title: `Generated Charts - ${new Date().toLocaleString()}`,
-        savedAt: new Date().toISOString()
-      };
-      
-      savedCharts.push(newChart);
-      localStorage.setItem('savedCharts', JSON.stringify(savedCharts));
-      
-      console.log('Saving chart to localStorage:', newChart);
-      console.log('Updated savedCharts array:', savedCharts);
-
-      // Also save via API for conversation display
-      const response = await fetch('/api/charts/save', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          conversation_id: conversationId || 1,
-          chart_config: visualizationSpecs,
-          chart_data: data,
-          title: `Generated Charts - ${new Date().toLocaleString()}`
-        }),
+        metadata: {
+          savedFrom: 'work-package-table',
+          chartCount: visualizationSpecs.length
+        }
       });
 
-      if (!response.ok) {
-        throw new Error('Failed to save charts to conversation');
+      console.log('Chart saved to unified storage:', savedChart);
+
+      // Also save via API for conversation display
+      try {
+        const response = await fetch('/api/charts/save', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            conversation_id: workingConversationId,
+            chart_config: visualizationSpecs,
+            chart_data: data,
+            title: `Generated Charts - ${new Date().toLocaleString()}`
+          }),
+        });
+
+        if (!response.ok) {
+          console.warn('API save failed, but unified storage succeeded');
+        }
+      } catch (apiError) {
+        console.warn('API save failed, but unified storage succeeded:', apiError);
       }
 
       toast({
         title: "Charts Saved",
-        description: `Saved ${visualizationSpecs.length} chart${visualizationSpecs.length !== 1 ? 's' : ''} locally and to conversation`,
+        description: `Saved ${visualizationSpecs.length} chart${visualizationSpecs.length !== 1 ? 's' : ''} to conversation`,
       });
 
       // Trigger a custom event to refresh the charts in the conversation
