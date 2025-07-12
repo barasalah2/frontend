@@ -1,9 +1,18 @@
-import { useState } from 'react';
-import { DynamicChart } from '../components/visualizations/dynamic-chart';
-import { Button } from '../components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
-
+import { useState } from "react";
+import { DynamicChart } from "../components/visualizations/dynamic-chart";
+import { Button } from "../components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "../components/ui/card";
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "../components/ui/tabs";
 // Test data mimicking real work package data
 const testData = [
   {
@@ -17,7 +26,7 @@ const testData = [
     priority: "High",
     budget: 50000,
     timeSpent: 120,
-    completionDate: "2024-01-12T00:00:00.000Z"
+    completionDate: "2024-01-12T00:00:00.000Z",
   },
   {
     wpId: "CWA-2301-002",
@@ -30,7 +39,7 @@ const testData = [
     priority: "Medium",
     budget: 75000,
     timeSpent: 0,
-    completionDate: null
+    completionDate: null,
   },
   {
     wpId: "CWA-2301-003",
@@ -43,7 +52,7 @@ const testData = [
     priority: "High",
     budget: 40000,
     timeSpent: 80,
-    completionDate: null
+    completionDate: null,
   },
   {
     wpId: "CWA-2302-001",
@@ -56,7 +65,7 @@ const testData = [
     priority: "Medium",
     budget: 30000,
     timeSpent: 95,
-    completionDate: null
+    completionDate: null,
   },
   {
     wpId: "CWA-2302-002",
@@ -69,7 +78,7 @@ const testData = [
     priority: "Low",
     budget: 25000,
     timeSpent: 60,
-    completionDate: "2024-01-08T00:00:00.000Z"
+    completionDate: "2024-01-08T00:00:00.000Z",
   },
   {
     wpId: "CWA-2302-003",
@@ -82,7 +91,7 @@ const testData = [
     priority: "Medium",
     budget: 35000,
     timeSpent: 72,
-    completionDate: null
+    completionDate: null,
   },
   {
     wpId: "CWA-2303-001",
@@ -95,7 +104,7 @@ const testData = [
     priority: "Low",
     budget: 45000,
     timeSpent: 0,
-    completionDate: null
+    completionDate: null,
   },
   {
     wpId: "CWA-2303-002",
@@ -108,209 +117,216 @@ const testData = [
     priority: "Low",
     budget: 55000,
     timeSpent: 0,
-    completionDate: null
-  }
+    completionDate: null,
+  },
 ];
 
 // Chart test configurations
 const coreChartSpecs = [
   {
-    type: 'pie' as const,
-    x: 'status',
+    type: "pie" as const,
+    x: "status",
     y: null,
     series: null,
-    title: 'Work Package Status Distribution',
+    title: "Work Package Status Distribution",
     transform_x: null,
-    transform_y: 'count',
-    rationale: 'Shows the distribution of work packages across different status categories'
+    transform_y: "count",
+    rationale:
+      "Shows the distribution of work packages across different status categories",
   },
   {
-    type: 'donut' as const,
-    x: 'assignedTeam',
+    type: "donut" as const,
+    x: "assignedTeam",
     y: null,
     series: null,
-    title: 'Team Assignment Distribution',
+    title: "Team Assignment Distribution",
     transform_x: null,
-    transform_y: 'count',
-    rationale: 'Displays how work packages are distributed among teams'
+    transform_y: "count",
+    rationale: "Displays how work packages are distributed among teams",
   },
   {
-    type: 'bar' as const,
-    x: 'status',
-    y: 'budget',
+    type: "bar" as const,
+    x: "status",
+    y: "budget",
     series: null,
-    title: 'Budget by Status',
+    title: "Budget by Status",
     transform_x: null,
-    transform_y: 'sum',
-    rationale: 'Shows total budget allocated to each status category'
+    transform_y: "sum",
+    rationale: "Shows total budget allocated to each status category",
   },
   {
-    type: 'horizontal_bar' as const,
-    x: 'assignedTeam',
-    y: 'budget',
-    series: 'priority',
-    title: 'Budget by Team and Priority',
-    transform_x: null,
-    transform_y: 'sum',
-    rationale: 'Shows horizontal bars with multiple series like the reference image'
-  }
+    type: "horizontal_bar" as const,
+    x: "progress",
+    y: "cwaId",
+    series: null,
+    title: "Count of IWPs by Planned Finish Date (Monthly)",
+    transform_x: "sum",
+    transform_y: null,
+    rationale: "Analyzes the trend of IWP planned finish dates over time",
+  },
 ];
 
 const advancedChartSpecs = [
   {
-    type: 'stacked_bar' as const,
-    x: 'priority',
-    y: 'budget',
-    series: 'status',
-    title: 'Budget by Priority and Status',
+    type: "stacked_bar" as const,
+    x: "priority",
+    y: "budget",
+    series: "status",
+    title: "Budget by Priority and Status",
     transform_x: null,
-    transform_y: 'sum',
-    rationale: 'Shows budget distribution across priorities, broken down by status'
+    transform_y: "sum",
+    rationale:
+      "Shows budget distribution across priorities, broken down by status",
   },
   {
-    type: 'grouped_bar' as const,
-    x: 'cwaId',
-    y: 'timeSpent',
-    series: 'assignedTeam',
-    title: 'Time Spent by CWA and Team',
+    type: "grouped_bar" as const,
+    x: "cwaId",
+    y: "timeSpent",
+    series: "assignedTeam",
+    title: "Time Spent by CWA and Team",
     transform_x: null,
-    transform_y: 'sum',
-    rationale: 'Compares time spent across CWAs, grouped by team'
+    transform_y: "sum",
+    rationale: "Compares time spent across CWAs, grouped by team",
   },
   {
-    type: 'line' as const,
-    x: 'dueDate',
-    y: 'progress',
+    type: "line" as const,
+    x: "dueDate",
+    y: "progress",
     series: null,
-    title: 'Progress Timeline',
+    title: "Progress Timeline",
     transform_x: null,
-    transform_y: 'mean',
-    rationale: 'Shows progress trends over time'
+    transform_y: "mean",
+    rationale: "Shows progress trends over time",
   },
   {
-    type: 'area' as const,
-    x: 'dueDate',
-    y: 'budget',
+    type: "area" as const,
+    x: "dueDate",
+    y: "budget",
     series: null,
-    title: 'Budget Timeline',
+    title: "Budget Timeline",
     transform_x: null,
-    transform_y: 'sum',
-    rationale: 'Displays cumulative budget over time'
-  }
+    transform_y: "sum",
+    rationale: "Displays cumulative budget over time",
+  },
 ];
 
 const specialChartSpecs = [
   {
-    type: 'scatter' as const,
-    x: 'budget',
-    y: 'progress',
+    type: "scatter" as const,
+    x: "budget",
+    y: "progress",
     series: null,
-    title: 'Budget vs Progress Correlation',
+    title: "Budget vs Progress Correlation",
     transform_x: null,
     transform_y: null,
-    rationale: 'Analyzes correlation between budget and progress'
+    rationale: "Analyzes correlation between budget and progress",
   },
   {
-    type: 'bubble' as const,
-    x: 'budget',
-    y: 'progress',
-    series: 'timeSpent',
-    title: 'Budget vs Progress with Time Spent',
+    type: "bubble" as const,
+    x: "budget",
+    y: "progress",
+    series: "timeSpent",
+    title: "Budget vs Progress with Time Spent",
     transform_x: null,
     transform_y: null,
-    rationale: 'Three-dimensional analysis of budget, progress, and time'
+    rationale: "Three-dimensional analysis of budget, progress, and time",
   },
   {
-    type: 'treemap' as const,
-    x: 'assignedTeam',
-    y: 'budget',
+    type: "treemap" as const,
+    x: "assignedTeam",
+    y: "budget",
     series: null,
-    title: 'Budget Allocation by Team',
+    title: "Budget Allocation by Team",
     transform_x: null,
-    transform_y: 'sum',
-    rationale: 'Shows proportional budget allocation across teams'
+    transform_y: "sum",
+    rationale: "Shows proportional budget allocation across teams",
   },
   {
-    type: 'histogram' as const,
-    x: 'progress',
+    type: "histogram" as const,
+    x: "progress",
     y: null,
     series: null,
-    title: 'Progress Distribution',
+    title: "Progress Distribution",
     transform_x: null,
-    transform_y: 'count',
-    rationale: 'Shows frequency distribution of progress values'
-  }
+    transform_y: "count",
+    rationale: "Shows frequency distribution of progress values",
+  },
 ];
 
 const fallbackChartSpecs = [
   {
-    type: 'waterfall' as const,
-    x: 'status',
-    y: 'budget',
+    type: "waterfall" as const,
+    x: "status",
+    y: "budget",
     series: null,
-    title: 'Budget Waterfall by Status',
+    title: "Budget Waterfall by Status",
     transform_x: null,
-    transform_y: 'sum',
-    rationale: 'Shows cumulative budget changes across status'
+    transform_y: "sum",
+    rationale: "Shows cumulative budget changes across status",
   },
   {
-    type: 'funnel' as const,
-    x: 'priority',
-    y: 'progress',
+    type: "funnel" as const,
+    x: "priority",
+    y: "progress",
     series: null,
-    title: 'Progress Funnel by Priority',
+    title: "Progress Funnel by Priority",
     transform_x: null,
-    transform_y: 'mean',
-    rationale: 'Funnel view of progress by priority level'
+    transform_y: "mean",
+    rationale: "Funnel view of progress by priority level",
   },
   {
-    type: 'box' as const,
-    x: 'assignedTeam',
-    y: 'timeSpent',
+    type: "box" as const,
+    x: "assignedTeam",
+    y: "timeSpent",
     series: null,
-    title: 'Time Spent Distribution by Team',
+    title: "Time Spent Distribution by Team",
     transform_x: null,
     transform_y: null,
-    rationale: 'Box plot showing time distribution across teams'
+    rationale: "Box plot showing time distribution across teams",
   },
   {
-    type: 'heatmap' as const,
-    x: 'status',
-    y: 'assignedTeam',
-    series: 'progress',
-    title: 'Status-Team Progress Heatmap',
+    type: "heatmap" as const,
+    x: "status",
+    y: "assignedTeam",
+    series: "progress",
+    title: "Status-Team Progress Heatmap",
     transform_x: null,
-    transform_y: 'mean',
-    rationale: 'Heatmap showing progress patterns across status and team'
-  }
+    transform_y: "mean",
+    rationale: "Heatmap showing progress patterns across status and team",
+  },
 ];
 
 export default function ChartTestPage() {
-  const [selectedTab, setSelectedTab] = useState('core');
+  const [selectedTab, setSelectedTab] = useState("core");
   const [showData, setShowData] = useState(false);
 
   const renderChartGrid = (specs: any[]) => (
     <div className="space-y-8">
-      {specs.map((spec, index) => (
-        <Card key={index} className="w-full">
-          <CardHeader className="pb-6">
-            <CardTitle className="text-xl font-semibold mb-2">
-              {spec.title}
-            </CardTitle>
-            <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">
-              {spec.rationale}
-            </p>
-            <div className="text-xs text-gray-500 dark:text-gray-500 bg-gray-50 dark:bg-gray-800 px-3 py-2 rounded">
-              Type: {spec.type} | X: {spec.x || 'N/A'} | Y: {spec.y || 'N/A'} | Series: {spec.series || 'N/A'}
-            </div>
-          </CardHeader>
-          <CardContent className="pt-0">
-            <div className="h-[600px] w-full border rounded-lg p-4 bg-white dark:bg-gray-900 relative overflow-hidden">
-              <DynamicChart data={testData} specs={[spec]} />
-            </div>
-          </CardContent>
-        </Card>
-      ))}
+      {specs.map((spec, index) => {
+        const chartData = testData;
+
+        return (
+          <Card key={index} className="w-full">
+            <CardHeader className="pb-6">
+              <CardTitle className="text-xl font-semibold mb-2">
+                {spec.title}
+              </CardTitle>
+              <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">
+                {spec.rationale}
+              </p>
+              <div className="text-xs text-gray-500 dark:text-gray-500 bg-gray-50 dark:bg-gray-800 px-3 py-2 rounded">
+                Type: {spec.type} | X: {spec.x || "N/A"} | Y: {spec.y || "N/A"}{" "}
+                | Series: {spec.series || "N/A"}
+              </div>
+            </CardHeader>
+            <CardContent className="pt-0">
+              <div className="h-[600px] w-full border rounded-lg p-4 bg-white dark:bg-gray-900 relative overflow-hidden">
+                <DynamicChart data={chartData} specs={[spec]} />
+              </div>
+            </CardContent>
+          </Card>
+        );
+      })}
     </div>
   );
 
@@ -328,7 +344,7 @@ export default function ChartTestPage() {
             variant={showData ? "default" : "outline"}
             onClick={() => setShowData(!showData)}
           >
-            {showData ? 'Hide' : 'Show'} Test Data
+            {showData ? "Hide" : "Show"} Test Data
           </Button>
         </div>
       </div>
@@ -345,40 +361,47 @@ export default function ChartTestPage() {
               </pre>
             </div>
             <p className="text-sm text-gray-600 dark:text-gray-400 mt-2">
-              Total records: {testData.length} | Fields: {Object.keys(testData[0]).join(', ')}
+              Total records: {testData.length} | Fields:{" "}
+              {Object.keys(testData[0]).join(", ")}
             </p>
           </CardContent>
         </Card>
       )}
 
-      <Tabs value={selectedTab} onValueChange={setSelectedTab} className="w-full space-y-6">
+      <Tabs
+        value={selectedTab}
+        onValueChange={setSelectedTab}
+        className="w-full space-y-6"
+      >
         <TabsList className="grid w-full grid-cols-4">
           <TabsTrigger value="core">Core Charts</TabsTrigger>
           <TabsTrigger value="advanced">Advanced Charts</TabsTrigger>
           <TabsTrigger value="special">Special Charts</TabsTrigger>
           <TabsTrigger value="fallback">Fallback Charts</TabsTrigger>
         </TabsList>
-        
+
         <TabsContent value="core" className="space-y-8">
           <div className="text-center py-6">
             <h2 className="text-xl font-semibold mb-2">Core Chart Types</h2>
             <p className="text-gray-600 dark:text-gray-400">
-              Essential charts that should work perfectly - pie, donut, bar, horizontal bar
+              Essential charts that should work perfectly - pie, donut, bar,
+              horizontal bar
             </p>
           </div>
           {renderChartGrid(coreChartSpecs)}
         </TabsContent>
-        
+
         <TabsContent value="advanced" className="space-y-8">
           <div className="text-center py-6">
             <h2 className="text-xl font-semibold mb-2">Advanced Chart Types</h2>
             <p className="text-gray-600 dark:text-gray-400">
-              Complex charts with multiple series - stacked bar, grouped bar, line, area
+              Complex charts with multiple series - stacked bar, grouped bar,
+              line, area
             </p>
           </div>
           {renderChartGrid(advancedChartSpecs)}
         </TabsContent>
-        
+
         <TabsContent value="special" className="space-y-8">
           <div className="text-center py-6">
             <h2 className="text-xl font-semibold mb-2">Special Chart Types</h2>
@@ -388,12 +411,13 @@ export default function ChartTestPage() {
           </div>
           {renderChartGrid(specialChartSpecs)}
         </TabsContent>
-        
+
         <TabsContent value="fallback" className="space-y-8">
           <div className="text-center py-6">
             <h2 className="text-xl font-semibold mb-2">Fallback Chart Types</h2>
             <p className="text-gray-600 dark:text-gray-400">
-              Charts with fallback implementations - waterfall, funnel, box, heatmap
+              Charts with fallback implementations - waterfall, funnel, box,
+              heatmap
             </p>
           </div>
           {renderChartGrid(fallbackChartSpecs)}
@@ -416,7 +440,9 @@ export default function ChartTestPage() {
             </div>
             <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg text-center">
               <div className="text-2xl font-bold text-blue-600">5</div>
-              <div className="text-sm text-blue-600">Fallback Implementation</div>
+              <div className="text-sm text-blue-600">
+                Fallback Implementation
+              </div>
             </div>
             <div className="bg-purple-50 dark:bg-purple-900/20 p-4 rounded-lg text-center">
               <div className="text-2xl font-bold text-purple-600">19</div>
@@ -425,8 +451,9 @@ export default function ChartTestPage() {
           </div>
           <div className="text-sm text-gray-600 dark:text-gray-400 bg-gray-50 dark:bg-gray-800 p-4 rounded-lg">
             <p>
-              All core chart types (pie, bar, line, scatter) are fully functional. 
-              Advanced charts have good implementations with proper fallbacks where needed.
+              All core chart types (pie, bar, line, scatter) are fully
+              functional. Advanced charts have good implementations with proper
+              fallbacks where needed.
             </p>
           </div>
         </CardContent>

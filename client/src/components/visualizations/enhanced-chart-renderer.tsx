@@ -140,73 +140,53 @@ export function EnhancedChartRenderer({ chart }: EnhancedChartProps) {
         );
 
       case 'horizontal_bar':
-        // For horizontal bar charts, detect multiple series (like English, Science, Math marks)
-        const availableKeys = chart.data.length > 0 ? Object.keys(chart.data[0]) : [];
+        // Simple horizontal bar chart logic - always treat as single series
+        const hBarDataKey = chart.data[0]?.count !== undefined ? 'count' : 'value';
         
-        // Find all numeric columns that could be series (excluding x-axis category and metadata)
-        const numericSeriesKeys = availableKeys.filter(key => {
-          if (key === chart.x || key === 'name' || key === 'count' || key === 'value') return false;
-          
-          // Check if this key has numeric values across the dataset
-          return chart.data.some(item => {
-            const val = item[key];
-            return typeof val === 'number' && val > 0;
-          });
-        });
-        
-        // Use all numeric series found (like English, Science, Math marks)
-        const seriesToRender = numericSeriesKeys.length > 0 ? numericSeriesKeys : [chart.y || 'value'];
-        
-        console.log('Horizontal bar chart:', {
-          data: chart.data.slice(0, 2),
-          availableKeys,
-          numericSeriesKeys,
-          seriesToRender
+        console.log('Horizontal bar chart FIXED:', {
+          dataKey: hBarDataKey,
+          data: chart.data.slice(0, 3),
+          chartSpec: {
+            x: chart.x,
+            y: chart.y,
+            series: chart.series,
+            transform_x: chart.transform_x,
+            transform_y: chart.transform_y
+          }
         });
         
         return (
           <div style={{ width: '100%', height: '500px' }}>
-            <BarChart 
-              data={chart.data} 
-              layout="horizontal"
-              width={800} 
-              height={500}
-              margin={{ top: 20, right: 150, left: 120, bottom: 60 }}
-            >
-              <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
-              <XAxis 
-                type="number" 
-                tick={{ fontSize: 12 }} 
-                domain={[0, 'dataMax']}
-                label={{ value: 'No. of marks obtained', position: 'insideBottom', offset: -10 }}
-              />
-              <YAxis 
-                dataKey={chart.x} 
-                type="category"
-                tick={{ fontSize: 11 }}
-                width={120}
-                interval={0}
-                label={{ value: 'Student\'s name', angle: -90, position: 'insideLeft' }}
-              />
-              <Tooltip content={<CustomTooltip />} />
-              {seriesToRender.length > 1 && (
-                <Legend 
-                  verticalAlign="top" 
-                  height={36}
-                  iconType="rect"
-                  wrapperStyle={{ paddingBottom: '20px' }}
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart 
+                data={chart.data} 
+                layout="horizontal"
+                margin={{ top: 20, right: 30, left: 120, bottom: 60 }}
+              >
+                <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
+                <XAxis 
+                  type="number" 
+                  tick={{ fontSize: 12 }} 
+                  domain={[0, 'dataMax']}
+                  label={{ value: chart.y || 'Value', position: 'insideBottom', offset: -10 }}
                 />
-              )}
-              {seriesToRender.map((seriesKey, index) => (
+                <YAxis 
+                  dataKey={chart.x} 
+                  type="category"
+                  tick={{ fontSize: 11 }}
+                  width={120}
+                  interval={0}
+                  label={{ value: chart.x || 'Category', angle: -90, position: 'insideLeft' }}
+                />
+                <Tooltip content={<CustomTooltip />} />
                 <Bar
-                  key={seriesKey}
-                  dataKey={seriesKey}
-                  fill={COLORS[index % COLORS.length]}
+                  dataKey={hBarDataKey}
+                  fill={COLORS[0]}
                   radius={[0, 4, 4, 0]}
-                  name={seriesKey.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}
+                  name={chart.y || 'Count'}
                 />
-              ))}
-            </BarChart>
+              </BarChart>
+            </ResponsiveContainer>
           </div>
         );
 

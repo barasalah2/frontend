@@ -27,19 +27,105 @@ const COLORS = [
   '#fbbf24', '#f87171', '#34d399', '#60a5fa', '#c084fc'
 ];
 
-// Process horizontal bar chart data for multiple series (like the reference image)
+// Process horizontal bar chart data with proper date grouping support
 function processHorizontalBarChart(data: any[], spec: VisualizationSpec): any[] {
   const xColumn = spec.x || 'category';
   const yColumn = spec.y || 'value';
   const seriesColumn = spec.series;
+  const xTransform = spec.transform_x;
+  const yTransform = spec.transform_y;
+  
+  // Apply date grouping transformation if specified
+  let processedData = data;
+  if (xTransform && xTransform.startsWith('date_group:')) {
+    const groupType = xTransform.split(':')[1];
+    const grouped = data.reduce((acc, item) => {
+      const dateValue = item[xColumn];
+      if (dateValue) {
+        try {
+          const date = new Date(dateValue);
+          if (!isNaN(date.getTime())) {
+            let key;
+            switch (groupType) {
+              case 'year':
+                key = date.getFullYear().toString();
+                break;
+              case 'quarter':
+                key = `${date.getFullYear()}-Q${Math.ceil((date.getMonth() + 1) / 3)}`;
+                break;
+              case 'month_year':
+              case 'month':
+                key = date.toLocaleDateString('en-US', { 
+                  year: 'numeric', 
+                  month: 'short' 
+                });
+                break;
+              default:
+                key = dateValue;
+            }
+            
+            if (!acc[key]) {
+              acc[key] = [];
+            }
+            acc[key].push(item);
+          }
+        } catch (e) {
+          // Handle invalid dates
+          if (!acc['Unknown']) {
+            acc['Unknown'] = [];
+          }
+          acc['Unknown'].push(item);
+        }
+      }
+      return acc;
+    }, {} as Record<string, any[]>);
+    
+    // Convert grouped data back to flat array with transformed x values
+    processedData = Object.entries(grouped).flatMap(([transformedX, items]) => 
+      items.map(item => ({
+        ...item,
+        [xColumn]: transformedX
+      }))
+    );
+  }
+  
+  // Apply y-axis transformation if specified
+  if (yTransform === 'count') {
+    const counts = processedData.reduce((acc, item) => {
+      const key = item[xColumn] || 'Unknown';
+      acc[key] = (acc[key] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>);
+    
+    return Object.entries(counts).map(([name, count]) => ({ 
+      [xColumn]: name, 
+      count: count, 
+      value: count 
+    }));
+  }
+  
+  if (yTransform === 'sum' && yColumn) {
+    const sums = processedData.reduce((acc, item) => {
+      const key = item[xColumn] || 'Unknown';
+      const value = parseFloat(String(item[yColumn]).replace(/[^0-9.-]/g, '')) || 0;
+      acc[key] = (acc[key] || 0) + value;
+      return acc;
+    }, {} as Record<string, number>);
+    
+    return Object.entries(sums).map(([name, sum]) => ({ 
+      [xColumn]: name, 
+      count: sum, 
+      value: sum 
+    }));
+  }
   
   // If no series specified, treat as single series
   if (!seriesColumn) {
-    return processBarChart(data, spec);
+    return processBarChart(processedData, spec);
   }
   
   // Group data by x-axis categories and series
-  const grouped = data.reduce((acc, item) => {
+  const grouped = processedData.reduce((acc, item) => {
     const category = item[xColumn] || 'Unknown';
     const seriesValue = item[seriesColumn] || 'Unknown';
     const value = parseFloat(String(item[yColumn]).replace(/[^0-9.-]/g, '')) || 0;
