@@ -3,7 +3,9 @@ import { ConversationSidebar } from "@/components/sidebar/conversation-sidebar";
 import { ChatMessage } from "@/components/chat/chat-message";
 import { ChatInput } from "@/components/chat/chat-input";
 import { TypingIndicator } from "@/components/chat/typing-indicator";
+import { SavedChartsViewer } from "@/components/charts/saved-charts-viewer";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useChat } from "@/hooks/use-chat";
 import { useConversations } from "@/hooks/use-conversations";
 import { Menu, Download, BarChart3 } from "lucide-react";
@@ -22,6 +24,26 @@ export default function WorkpacksGenie() {
     currentConversationId,
     conversationTitle 
   } = useChat(selectedConversationId);
+
+  // Debug localStorage content
+  useEffect(() => {
+    const savedCharts = localStorage.getItem('savedCharts');
+    console.log('WorkpacksGenie - localStorage savedCharts:', savedCharts);
+    console.log('WorkpacksGenie - selected conversation:', selectedConversationId);
+    console.log('WorkpacksGenie - current conversation:', currentConversationId);
+    console.log('WorkpacksGenie - messages count:', messages.length);
+    
+    if (savedCharts) {
+      try {
+        const parsed = JSON.parse(savedCharts);
+        console.log('WorkpacksGenie - parsed charts:', parsed);
+        const forConversation = parsed.filter((chart: any) => chart.conversationId === selectedConversationId);
+        console.log('WorkpacksGenie - charts for this conversation:', forConversation);
+      } catch (e) {
+        console.error('WorkpacksGenie - error parsing charts:', e);
+      }
+    }
+  }, [selectedConversationId, currentConversationId, messages]);
 
   // Load initial conversation or create one
   useEffect(() => {
@@ -69,8 +91,8 @@ export default function WorkpacksGenie() {
   };
 
   const handleVisualize = () => {
-    // TODO: Implement visualization functionality
-    console.log("Opening visualization...");
+    // Open saved charts viewer
+    console.log("Opening saved charts viewer...");
   };
 
 
@@ -117,6 +139,20 @@ export default function WorkpacksGenie() {
               </div>
             </div>
             <div className="flex items-center space-x-3">
+              <Dialog>
+                <DialogTrigger asChild>
+                  <Button variant="outline" size="sm">
+                    <BarChart3 className="h-4 w-4 mr-2" />
+                    Saved Charts
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="max-w-6xl max-h-[80vh] overflow-y-auto">
+                  <DialogHeader>
+                    <DialogTitle>Saved Charts</DialogTitle>
+                  </DialogHeader>
+                  <SavedChartsViewer />
+                </DialogContent>
+              </Dialog>
               <Button
                 onClick={handleExportReport}
                 className="bg-workpack-green hover:bg-green-700 text-white"
@@ -124,14 +160,6 @@ export default function WorkpacksGenie() {
               >
                 <Download className="h-4 w-4 mr-2" />
                 Export Report
-              </Button>
-              <Button
-                onClick={handleVisualize}
-                variant="outline"
-                size="sm"
-              >
-                <BarChart3 className="h-4 w-4 mr-2" />
-                Visualize
               </Button>
             </div>
           </div>
@@ -166,6 +194,7 @@ export default function WorkpacksGenie() {
                 <ChatMessage 
                   key={message.id} 
                   message={message} 
+                  conversationId={currentConversationId}
                 />
               ))}
               {isLoading && <TypingIndicator />}

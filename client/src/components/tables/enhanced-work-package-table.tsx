@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { ChevronUp, ChevronDown, Search, Filter, X, BarChart3 } from "lucide-react";
+import { ChevronUp, ChevronDown, Search, Filter, X, BarChart3, Save } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -10,11 +10,12 @@ import { DynamicChart } from "@/components/visualizations/dynamic-chart";
 
 interface EnhancedWorkPackageTableProps {
   data: any[];
+  conversationId?: number;
 }
 
 type SortDirection = "asc" | "desc" | null;
 
-export function EnhancedWorkPackageTable({ data }: EnhancedWorkPackageTableProps) {
+export function EnhancedWorkPackageTable({ data, conversationId }: EnhancedWorkPackageTableProps) {
   const [sortField, setSortField] = useState<string | null>(null);
   const [sortDirection, setSortDirection] = useState<SortDirection>(null);
   const [searchTerm, setSearchTerm] = useState("");
@@ -141,13 +142,14 @@ export function EnhancedWorkPackageTable({ data }: EnhancedWorkPackageTableProps
       // Get first 10 rows as data snippet
       const dataSnippet = data.slice(0, 10);
 
-      // Send to your external AI backend app
-      const AI_BACKEND_URL = 'http://localhost:5000/api/datavis';
+      // Send to your external AI app (not the internal API)
+      const AI_BACKEND_URL = 'http://localhost:5000/api/datavis'; // Your external AI app
 
       const requestPayload = {
         columns: columnInfo.map(col => ({ name: col.name })), // Only send column names as per your spec
         data_snippet: dataSnippet,
         total_rows: data.length,
+        // Remove internal saving params when calling external app
         ...(userMessage.trim() && { message: userMessage.trim() })
       };
 
@@ -247,6 +249,19 @@ export function EnhancedWorkPackageTable({ data }: EnhancedWorkPackageTableProps
           return false;
         }
       }
+
+      // Check for box plots with invalid configurations
+      if (spec.type === 'box' || spec.type === 'violin') {
+        // Box plots need: categorical grouping variable (x) and numeric data (y)
+        const isXCategorical = spec.x && (spec.x.includes('name') || spec.x.includes('description') || spec.x.includes('string_agg') || spec.x.includes('uom'));
+        const isYNumeric = spec.y && (spec.y.includes('sum') || spec.y.includes('count') || !isNaN(Number(spec.y)));
+        
+        // Box plots showing distribution of categories (not numeric distributions) are invalid
+        if (!isYNumeric || (spec.x && spec.x.includes('name') && spec.y && spec.y.includes('sum'))) {
+          console.warn(`Filtering out invalid box plot: ${spec.x} vs ${spec.y} (box plots need categorical grouping + numeric distribution)`);
+          return false;
+        }
+      }
       
       return true;
     });
@@ -267,6 +282,69 @@ export function EnhancedWorkPackageTable({ data }: EnhancedWorkPackageTableProps
     }
     
     return 'categorical';
+  };
+
+  const handleSaveCharts = async () => {
+    if (!visualizationSpecs.length) {
+      toast({
+        title: "No Charts",
+        description: "No charts to save",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      // Save charts to local storage
+      const savedCharts = JSON.parse(localStorage.getItem('savedCharts') || '[]');
+      const newChart = {
+        id: Date.now(),
+        conversationId: conversationId || 1,
+        charts: visualizationSpecs,
+        data: data,
+        title: `Generated Charts - ${new Date().toLocaleString()}`,
+        savedAt: new Date().toISOString()
+      };
+      
+      savedCharts.push(newChart);
+      localStorage.setItem('savedCharts', JSON.stringify(savedCharts));
+      
+      console.log('Saving chart to localStorage:', newChart);
+      console.log('Updated savedCharts array:', savedCharts);
+
+      // Also save via API for conversation display
+      const response = await fetch('/api/charts/save', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          conversation_id: conversationId || 1,
+          chart_config: visualizationSpecs,
+          chart_data: data,
+          title: `Generated Charts - ${new Date().toLocaleString()}`
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to save charts to conversation');
+      }
+
+      toast({
+        title: "Charts Saved",
+        description: `Saved ${visualizationSpecs.length} chart${visualizationSpecs.length !== 1 ? 's' : ''} locally and to conversation`,
+      });
+
+      // Trigger a custom event to refresh the charts in the conversation
+      window.dispatchEvent(new Event('chartSaved'));
+    } catch (error) {
+      console.error('Error saving charts:', error);
+      toast({
+        title: "Error",
+        description: "Failed to save charts",
+        variant: "destructive",
+      });
+    }
   };
 
   const hasActiveFilters = searchTerm || filterField !== "all" || filterValue !== "all" || sortField;
@@ -315,13 +393,24 @@ export function EnhancedWorkPackageTable({ data }: EnhancedWorkPackageTableProps
           </Button>
           
           {showVisualizations && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setShowVisualizations(false)}
-            >
-              Hide Charts
-            </Button>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowVisualizations(false)}
+              >
+                Hide Charts
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => handleSaveCharts()}
+                disabled={!visualizationSpecs.length}
+              >
+                <Save className="h-4 w-4 mr-2" />
+                Save Charts
+              </Button>
+            </div>
           )}
           
           {hasActiveFilters && (

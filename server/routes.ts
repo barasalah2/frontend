@@ -74,10 +74,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // DataVisAgent endpoint
+  // DataVisAgent endpoint - Enhanced with chart saving
   app.post("/api/datavis", async (req, res) => {
     try {
-      const { columns, data_snippet } = req.body;
+      const { columns, data_snippet, conversation_id, save_chart = false } = req.body;
       
       if (!columns || !data_snippet) {
         return res.status(400).json({ error: "Columns and data_snippet are required" });
@@ -85,6 +85,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Generate visualization configuration based on data analysis
       const visualizations = generateVisualizationConfig(columns, data_snippet);
+      
+      // Save chart data as a message if requested and conversation exists
+      if (save_chart && conversation_id) {
+        await storage.createMessage({
+          conversationId: conversation_id,
+          content: "Generated interactive visualizations for your data analysis",
+          sender: "bot",
+          messageType: "visualization",
+          data: {
+            charts: visualizations,
+            originalData: data_snippet,
+            columns: columns,
+            timestamp: new Date().toISOString()
+          }
+        });
+      }
       
       res.json({ visualizations });
     } catch (error) {
@@ -193,26 +209,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Data visualization endpoint
-  app.post("/api/datavis", async (req, res) => {
+  // Save chart configuration endpoint (local storage)
+  app.post("/api/charts/save", async (req, res) => {
     try {
-      const { columns, data_snippet } = req.body;
+      const { conversation_id, chart_config, chart_data, title } = req.body;
       
-      if (!columns || !Array.isArray(columns)) {
-        return res.status(400).json({ error: "Columns array is required" });
-      }
-      
-      if (!data_snippet || !Array.isArray(data_snippet)) {
-        return res.status(400).json({ error: "Data snippet array is required" });
+      if (!conversation_id || !chart_config) {
+        return res.status(400).json({ error: "Conversation ID and chart config are required" });
       }
 
-      const visualizations = generateVisualizationConfig(columns, data_snippet);
-      
-      res.json({
-        visualizations: visualizations
+      // Save chart as a visualization message in memory storage
+      const message = await storage.createMessage({
+        conversationId: conversation_id,
+        content: title || "Saved chart visualization",
+        sender: "bot",
+        messageType: "visualization",
+        data: {
+          charts: Array.isArray(chart_config) ? chart_config : [chart_config],
+          originalData: chart_data || [],
+          savedAt: new Date().toISOString(),
+          title: title
+        }
       });
+      
+      res.json({ success: true, message_id: message.id });
     } catch (error) {
-      console.error("Error generating visualization:", error);
+      console.error("Error saving chart:", error);
       res.status(500).json({ error: "Internal server error" });
     }
   });

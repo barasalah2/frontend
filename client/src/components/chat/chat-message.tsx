@@ -5,21 +5,39 @@ import { Badge } from "@/components/ui/badge";
 import { EnhancedWorkPackageTable } from "@/components/tables/enhanced-work-package-table";
 import { GanttChart } from "@/components/visualizations/gantt-chart";
 import { ProgressChart } from "@/components/visualizations/progress-chart";
+import { DynamicChart } from "@/components/visualizations/dynamic-chart";
 import { type Message } from "@shared/schema";
-import { Bot, User, Download, Maximize2, AlertCircle, BarChart3, EyeOff } from "lucide-react";
+import { Bot, User, Download, Maximize2, AlertCircle, BarChart3, EyeOff, Save } from "lucide-react";
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { exportToExcel } from "@/lib/excel-export";
+import { apiRequest } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 
 interface ChatMessageProps {
   message: Message;
+  conversationId?: number;
 }
 
-export function ChatMessage({ message }: ChatMessageProps) {
+export function ChatMessage({ message, conversationId }: ChatMessageProps) {
   const [showFullscreen, setShowFullscreen] = useState(false);
   const [showCharts, setShowCharts] = useState(false);
+  const [savingChart, setSavingChart] = useState(false);
   const isBot = message.sender === "bot";
-  const hasTableData = message.data && message.data.table;
+  const hasTableData = message.data && 
+    message.data.table && 
+    Array.isArray(message.data.table) && 
+    message.data.table.length > 0;
+
+  const hasVisualizationData = (message.messageType === "visualization" ||
+    message.message_type === "visualization") &&
+    message.data &&
+    message.data.charts &&
+    Array.isArray(message.data.charts) &&
+    message.data.charts.length > 0;
+
+
+  const { toast } = useToast();
 
   const formatTime = (date: Date | string) => {
     try {
@@ -44,6 +62,52 @@ export function ChatMessage({ message }: ChatMessageProps) {
       const headers = Object.keys(tableData[0] || {});
       const rows = tableData.map((row: any) => Object.values(row));
       exportToExcel([headers, ...rows], `workpack_data_${message.id}`);
+    }
+  };
+
+  const handleSaveChart = async (chartConfig: any, title: string) => {
+    setSavingChart(true);
+    try {
+      // Save to local storage
+      const savedCharts = JSON.parse(localStorage.getItem('savedCharts') || '[]');
+      const newChart = {
+        id: Date.now(),
+        conversationId: conversationId || 1,
+        charts: [chartConfig],
+        data: hasTableData ? message.data.table : [],
+        title: title,
+        savedAt: new Date().toISOString()
+      };
+      
+      savedCharts.push(newChart);
+      localStorage.setItem('savedCharts', JSON.stringify(savedCharts));
+
+      // Also save via API if conversation exists
+      if (conversationId) {
+        await apiRequest("POST", "/api/charts/save", {
+          conversation_id: conversationId,
+          chart_config: chartConfig,
+          chart_data: hasTableData ? message.data.table : [],
+          title: title
+        });
+      }
+
+      toast({
+        title: "Chart Saved",
+        description: "Chart has been saved locally and to conversation",
+      });
+
+      // Trigger a custom event to refresh the charts in the conversation
+      window.dispatchEvent(new Event('chartSaved'));
+    } catch (error) {
+      console.error("Error saving chart:", error);
+      toast({
+        title: "Error",
+        description: "Failed to save chart",
+        variant: "destructive",
+      });
+    } finally {
+      setSavingChart(false);
     }
   };
 
@@ -122,6 +186,7 @@ export function ChatMessage({ message }: ChatMessageProps) {
                 </div>
                 <EnhancedWorkPackageTable 
                   data={message.data.table} 
+                  conversationId={conversationId}
                 />
               </div>
             </motion.div>
@@ -141,14 +206,29 @@ export function ChatMessage({ message }: ChatMessageProps) {
                   <h4 className="font-semibold workpack-text dark:text-white">
                     Data Distribution - Pie Chart
                   </h4>
-                  <Button
-                    onClick={() => setShowFullscreen(true)}
-                    size="sm"
-                    variant="outline"
-                  >
-                    <Maximize2 className="h-3 w-3 mr-1" />
-                    Full Screen
-                  </Button>
+                  <div className="flex space-x-2">
+                    <Button
+                      onClick={() => handleSaveChart({
+                        type: 'pie',
+                        data: message.data.table,
+                        title: 'Data Distribution - Pie Chart'
+                      }, 'Data Distribution - Pie Chart')}
+                      size="sm"
+                      variant="outline"
+                      disabled={savingChart}
+                    >
+                      <Save className="h-3 w-3 mr-1" />
+                      Save Chart
+                    </Button>
+                    <Button
+                      onClick={() => setShowFullscreen(true)}
+                      size="sm"
+                      variant="outline"
+                    >
+                      <Maximize2 className="h-3 w-3 mr-1" />
+                      Full Screen
+                    </Button>
+                  </div>
                 </div>
                 <ProgressChart data={message.data.table} type="pie" />
               </div>
@@ -159,16 +239,59 @@ export function ChatMessage({ message }: ChatMessageProps) {
                   <h4 className="font-semibold workpack-text dark:text-white">
                     Timeline & Analysis
                   </h4>
-                  <Button
-                    onClick={() => setShowFullscreen(true)}
-                    size="sm"
-                    variant="outline"
-                  >
-                    <Maximize2 className="h-3 w-3 mr-1" />
-                    Full Screen
-                  </Button>
+                  <div className="flex space-x-2">
+                    <Button
+                      onClick={() => handleSaveChart({
+                        type: 'gantt',
+                        data: message.data.table,
+                        title: 'Timeline & Analysis - Gantt Chart'
+                      }, 'Timeline & Analysis - Gantt Chart')}
+                      size="sm"
+                      variant="outline"
+                      disabled={savingChart}
+                    >
+                      <Save className="h-3 w-3 mr-1" />
+                      Save Chart
+                    </Button>
+                    <Button
+                      onClick={() => setShowFullscreen(true)}
+                      size="sm"
+                      variant="outline"
+                    >
+                      <Maximize2 className="h-3 w-3 mr-1" />
+                      Full Screen
+                    </Button>
+                  </div>
                 </div>
                 <GanttChart data={message.data.table} />
+              </div>
+            </motion.div>
+          )}
+
+          {/* Saved Visualizations Display */}
+          {hasVisualizationData && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.2 }}
+              className="mt-4"
+            >
+              <div className="bg-gray-50 dark:bg-slate-900 rounded-lg p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className="font-semibold workpack-text dark:text-white flex items-center">
+                    <BarChart3 className="h-4 w-4 mr-2 text-workpack-blue" />
+                    Saved Visualization{message.data.charts?.length > 1 ? 's' : ''}
+                  </h4>
+                  <Badge variant="secondary">
+                    {message.data.charts?.length || 0} chart{message.data.charts?.length !== 1 ? 's' : ''}
+                  </Badge>
+                </div>
+                {message.data.charts && (
+                  <DynamicChart 
+                    data={message.data.originalData || []} 
+                    specs={message.data.charts} 
+                  />
+                )}
               </div>
             </motion.div>
           )}

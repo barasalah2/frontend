@@ -119,6 +119,33 @@ The application is designed to be deployment-ready for platforms like Replit, wi
 
 ## Recent Changes (July 12, 2025)
 
+### Chart Saving System Implementation (Local Storage)
+- **Migration Complete**: Successfully migrated from Replit Agent to standard Replit environment
+  - Switched from PostgreSQL to in-memory storage for simplicity
+  - Removed database dependencies and used local storage for chart persistence
+  - Application now runs cleanly with memory-based storage and client/server separation
+- **Chart Saving Functionality Added**: Implemented comprehensive chart persistence system
+  - Enhanced backend API with `/api/charts/save` endpoint for saving chart configurations
+  - Added local storage fallback for chart persistence independent of database
+  - Added "Save Chart" buttons to existing pie charts and Gantt charts in chat messages
+  - Charts are saved both locally and in memory storage with full metadata and timestamps
+- **Chart Display Integration**: Fixed saved chart visibility on conversation reload
+  - Modified useChat hook to merge local storage charts with API messages
+  - Charts now persist and display correctly after page refresh or server restart
+  - Added storage event listeners to update chat in real-time when charts are saved
+  - Created SavedChartsViewer component with dialog for managing all saved charts
+- **External API Integration Fixed**: Chart generation now correctly calls user's external AI app
+  - Updated visualization generation to call `http://localhost:5000/api/datavis` (user's external app)
+  - Removed internal chart processing to prevent conflicts with external AI system
+  - Added proper error handling and fallback for external API connectivity issues
+  - Added validation to filter out invalid chart configurations (e.g., inappropriate box plots for categorical data)
+- **Enhanced Chat Message Component**: Added support for displaying saved visualization messages
+  - Created dedicated section for saved charts with DynamicChart renderer
+  - Charts persist in conversation history and can be viewed anytime
+  - Added conversation ID passing to enable chart saving from any message context
+
+## Previous Changes (July 12, 2025)
+
 ### Chart Rendering Issues Resolved
 - **Bar Chart Fix Complete**: Successfully resolved critical bar chart rendering issues
   - Fixed BarChart component layout prop conflict that prevented bars from displaying
