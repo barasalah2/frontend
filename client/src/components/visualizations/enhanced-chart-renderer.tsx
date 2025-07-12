@@ -100,11 +100,14 @@ export function EnhancedChartRenderer({ chart }: EnhancedChartProps) {
         const dataKey = chart.transform_y === 'sum' && chart.y ? chart.y :
                         chart.transform_y === 'count' || chart.title?.includes('Count') ? 'count' :
                         chart.y || 'value';
+                        
+
 
         return (
           <BarChart 
+            width={800}
+            height={320}
             data={chart.data} 
-            layout={isHorizontal ? "horizontal" : "vertical"}
             margin={{ top: 20, right: 30, left: isHorizontal ? 120 : 40, bottom: isHorizontal ? 20 : 100 }}
           >
             <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
@@ -127,6 +130,7 @@ export function EnhancedChartRenderer({ chart }: EnhancedChartProps) {
               <>
                 <XAxis 
                   dataKey={chart.x} 
+                  type="category"
                   tick={{ fontSize: 11 }}
                   angle={-45}
                   textAnchor="end"
@@ -135,6 +139,7 @@ export function EnhancedChartRenderer({ chart }: EnhancedChartProps) {
                   label={{ value: chart.x, position: 'insideBottom', offset: -5 }}
                 />
                 <YAxis 
+                  type="number"
                   tick={{ fontSize: 12 }} 
                   width={60}
                   label={{ value: dataKey, angle: -90, position: 'insideLeft' }}
@@ -315,50 +320,95 @@ export function EnhancedChartRenderer({ chart }: EnhancedChartProps) {
 
       case 'scatter':
       case 'bubble':
-        return (
-          <ScatterChart data={chart.data} margin={{ top: 20, right: 30, left: 40, bottom: 100 }}>
-            <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
-            <XAxis 
-              dataKey="x"
-              type="number"
-              tick={{ fontSize: 11 }}
-              name={chart.x}
-              domain={['dataMin', 'dataMax']}
-              label={{ value: chart.x, position: 'insideBottom', offset: -5 }}
-            />
-            <YAxis 
-              dataKey="y"
-              type="number"
-              tick={{ fontSize: 12 }}
-              width={60}
-              name={chart.y}
-              domain={['dataMin', 'dataMax']}
-              label={{ value: chart.y, angle: -90, position: 'insideLeft' }}
-            />
-            <Tooltip 
-              content={({ active, payload }) => {
-                if (active && payload && payload.length) {
-                  const data = payload[0].payload;
-                  return (
-                    <div className="bg-white dark:bg-slate-800 p-3 border border-gray-200 dark:border-slate-700 rounded-lg shadow-lg">
-                      <p className="text-sm font-semibold text-workpack-text dark:text-white">
-                        {chart.x}: {data.originalX || data.x}
-                      </p>
-                      <p className="text-sm text-workpack-text dark:text-white">
-                        {chart.y}: {data.originalY || data.y}
-                      </p>
-                    </div>
-                  );
-                }
-                return null;
-              }}
-            />
-            <Scatter
-              dataKey="y"
-              fill={COLORS[0]}
-            />
-          </ScatterChart>
-        );
+        // Check if x-axis contains dates or categorical data (like quarters)
+        const hasDateData = chart.data.some(item => {
+          const xValue = item.x || item[chart.x];
+          return xValue && typeof xValue === 'string' && (
+            !isNaN(new Date(xValue).getTime()) || 
+            String(xValue).includes('Q') || // Quarter format like "2025-Q1"
+            String(xValue).includes('-') // Date-like format
+          );
+        });
+
+        // Check if data has categorical x values (transformed dates)
+        const hasCategoricalX = chart.data.some(item => {
+          const xValue = item.x || item[chart.x];
+          return xValue && typeof xValue === 'string' && isNaN(Number(xValue));
+        });
+
+        // Handle series data for multi-colored scatter plots
+        if (chart.series) {
+          const seriesValues = [...new Set(chart.data.map(item => item[chart.series]).filter(Boolean))];
+          
+          // Get unique x-values in the order they appear in the data (already sorted)
+          const xValues = [...new Set(chart.data.map(item => item[chart.x]))];
+          
+          return (
+            <ScatterChart data={chart.data} margin={{ top: 20, right: 130, left: 40, bottom: 100 }}>
+              <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
+              <XAxis 
+                dataKey={chart.x}
+                type="category"
+                tick={{ fontSize: 11, angle: -45, textAnchor: "end" }}
+                name={chart.x}
+                label={{ value: chart.x, position: 'insideBottom', offset: -5 }}
+                height={100}
+                interval={0}
+                domain={xValues}
+              />
+              <YAxis 
+                dataKey={chart.y}
+                type="number"
+                tick={{ fontSize: 12 }}
+                width={60}
+                name={chart.y}
+                domain={['dataMin', 'dataMax']}
+                label={{ value: chart.y, angle: -90, position: 'insideLeft' }}
+              />
+              <Tooltip content={<CustomTooltip />} />
+              <Legend />
+              {seriesValues.map((seriesValue, index) => (
+                <Scatter
+                  key={seriesValue}
+                  name={String(seriesValue)}
+                  data={chart.data.filter(item => item[chart.series] === seriesValue)}
+                  fill={COLORS[index % COLORS.length]}
+                />
+              ))}
+            </ScatterChart>
+          );
+        } else {
+          // Single series scatter plot
+          return (
+            <ScatterChart data={chart.data} margin={{ top: 20, right: 30, left: 40, bottom: 100 }}>
+              <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
+              <XAxis 
+                dataKey={chart.x}
+                type={hasDateData ? "category" : "number"}
+                tick={{ fontSize: 11, angle: hasDateData ? -45 : 0, textAnchor: hasDateData ? "end" : "middle" }}
+                name={chart.x}
+                domain={hasDateData ? undefined : ['dataMin', 'dataMax']}
+                label={{ value: chart.x, position: 'insideBottom', offset: -5 }}
+                height={hasDateData ? 100 : undefined}
+                interval={hasDateData ? 0 : undefined}
+              />
+              <YAxis 
+                dataKey={chart.y}
+                type="number"
+                tick={{ fontSize: 12 }}
+                width={60}
+                name={chart.y}
+                domain={['dataMin', 'dataMax']}
+                label={{ value: chart.y, angle: -90, position: 'insideLeft' }}
+              />
+              <Tooltip content={<CustomTooltip />} />
+              <Scatter
+                dataKey={chart.y}
+                fill={COLORS[0]}
+              />
+            </ScatterChart>
+          );
+        }
 
       case 'histogram':
         // For histograms, determine the correct x-axis column based on which column was binned

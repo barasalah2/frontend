@@ -968,11 +968,15 @@ function processLineChart(data: any[], spec: VisualizationSpec): any[] {
 function processScatterChart(data: any[], spec: VisualizationSpec): any[] {
   const xColumn = spec.x;
   const yColumn = spec.y;
+  const seriesColumn = spec.series;
   
   if (!xColumn || !yColumn || data.length === 0) return [];
   
+  // Get transforms - only apply if explicitly specified
+  const xTransform = spec.transform_x;
+  const yTransform = spec.transform_y;
+  
   // Validate that both columns are suitable for scatter plots
-  // Text-heavy columns like descriptions should not be used for scatter plots
   const isXTextColumn = xColumn.includes('description') || xColumn.includes('name') || xColumn.includes('label');
   const isYTextColumn = yColumn.includes('description') || yColumn.includes('name') || yColumn.includes('label');
   
@@ -981,60 +985,168 @@ function processScatterChart(data: any[], spec: VisualizationSpec): any[] {
     return [];
   }
   
-  // Check if both columns are dates
-  const isXDate = xColumn.includes('date') || xColumn.includes('start') || xColumn.includes('finish');
-  const isYDate = yColumn.includes('date') || yColumn.includes('start') || yColumn.includes('finish');
+  // Handle data aggregation when transforms are specified
+  if (xTransform && xTransform.startsWith('date_group:') && yTransform === 'sum') {
+    const groupType = xTransform.split(':')[1];
+    
+    // Group data by transformed x-values and sum y-values by series
+    const grouped = data.reduce((acc, item) => {
+      let xValue = item[xColumn];
+      let yValue = parseFloat(String(item[yColumn]).replace(/[^0-9.-]/g, '')) || 0;
+      const seriesValue = seriesColumn ? item[seriesColumn] : 'default';
+      
+      // Apply date grouping transformation
+      if (xValue) {
+        try {
+          const date = new Date(xValue);
+          if (!isNaN(date.getTime())) {
+            switch (groupType) {
+              case 'year':
+                xValue = date.getFullYear().toString();
+                break;
+              case 'quarter':
+                xValue = `${date.getFullYear()}-Q${Math.ceil((date.getMonth() + 1) / 3)}`;
+                break;
+              case 'month':
+              case 'month_year':
+                xValue = date.toLocaleDateString('en-US', { year: 'numeric', month: 'short' });
+                break;
+            }
+          }
+        } catch (e) {
+          // Keep original value
+        }
+      }
+      
+      const key = `${xValue}_${seriesValue}`;
+      if (!acc[key]) {
+        acc[key] = {
+          [xColumn]: xValue,
+          [yColumn]: 0,
+          x: xValue,
+          y: 0
+        };
+        if (seriesColumn) {
+          acc[key][seriesColumn] = seriesValue;
+          acc[key].series = seriesValue;
+        }
+      }
+      
+      // Ensure yValue is a valid number
+      if (!isNaN(yValue) && isFinite(yValue)) {
+        acc[key][yColumn] += yValue;
+        acc[key].y += yValue;
+      }
+      
+      return acc;
+    }, {} as Record<string, any>);
+    
+    // Sort the grouped data chronologically by quarter
+    const result = Object.values(grouped).sort((a, b) => {
+      const quarterA = a[xColumn];
+      const quarterB = b[xColumn];
+      
+      // Extract year and quarter for proper sorting
+      if (typeof quarterA === 'string' && typeof quarterB === 'string') {
+        const matchA = quarterA.match(/(\d{4})-Q(\d)/);
+        const matchB = quarterB.match(/(\d{4})-Q(\d)/);
+        
+        if (matchA && matchB) {
+          const yearA = parseInt(matchA[1]);
+          const yearB = parseInt(matchB[1]);
+          const qA = parseInt(matchA[2]);
+          const qB = parseInt(matchB[2]);
+          
+          if (yearA !== yearB) {
+            return yearA - yearB;
+          }
+          return qA - qB;
+        }
+      }
+      
+      // Fallback to string comparison
+      return String(quarterA).localeCompare(String(quarterB));
+    });
+    
+    console.log('Scatter chart aggregated data:', result);
+    return result;
+  }
   
-  // For scatter plots with dates, we need special handling
+  // Standard processing for non-aggregated scatter plots
   return data.map((item, index) => {
     let xValue = item[xColumn];
     let yValue = item[yColumn];
     
-    // Handle date columns - convert to timestamps for scatter plots
-    if (isXDate && xValue) {
-      try {
-        const date = new Date(xValue);
-        if (!isNaN(date.getTime())) {
-          xValue = date.getTime(); // Use timestamp for proper scatter plot positioning
+    // Only apply transformations if explicitly specified
+    if (xTransform) {
+      // Apply x-axis transformation only if specified
+      if (xTransform.startsWith('date_group:')) {
+        const groupType = xTransform.split(':')[1];
+        if (xValue) {
+          try {
+            const date = new Date(xValue);
+            if (!isNaN(date.getTime())) {
+              switch (groupType) {
+                case 'year':
+                  xValue = date.getFullYear().toString();
+                  break;
+                case 'quarter':
+                  xValue = `${date.getFullYear()}-Q${Math.ceil((date.getMonth() + 1) / 3)}`;
+                  break;
+                case 'month':
+                case 'month_year':
+                  xValue = date.toLocaleDateString('en-US', { year: 'numeric', month: 'short' });
+                  break;
+              }
+            }
+          } catch (e) {
+            // Keep original value
+          }
         }
-      } catch (e) {
-        // Keep original value if not a valid date
+      }
+    } else {
+      // No transformation - keep original date format for proper date axis display
+      // Don't convert to timestamp unless explicitly requested
+    }
+    
+    // Apply y-transformation only if specified
+    if (yTransform === 'sum' && typeof yValue === 'string') {
+      const parsed = parseFloat(yValue.replace(/[^0-9.-]/g, ''));
+      if (!isNaN(parsed)) {
+        yValue = parsed;
+      }
+    } else if (!yTransform) {
+      // No transformation - try to parse as number only if it looks numeric
+      if (typeof yValue === 'string' && /^[0-9.-]+$/.test(yValue.replace(/[^\d.-]/g, ''))) {
+        const parsed = parseFloat(yValue.replace(/[^0-9.-]/g, ''));
+        if (!isNaN(parsed)) {
+          yValue = parsed;
+        }
       }
     }
     
-    if (isYDate && yValue) {
-      try {
-        const date = new Date(yValue);
-        if (!isNaN(date.getTime())) {
-          yValue = date.getTime(); // Use timestamp for proper scatter plot positioning
-        }
-      } catch (e) {
-        // Keep original value if not a valid date
-      }
-    }
-    
-    // Try to parse numbers for non-date columns
-    if (!isXDate && typeof xValue === 'string') {
+    // For non-transformed numeric columns, try to parse
+    if (!xTransform && typeof xValue === 'string' && /^[0-9.-]+$/.test(xValue.replace(/[^\d.-]/g, ''))) {
       const parsed = parseFloat(xValue.replace(/[^0-9.-]/g, ''));
       if (!isNaN(parsed)) {
         xValue = parsed;
       }
     }
     
-    if (!isYDate && typeof yValue === 'string') {
-      const parsed = parseFloat(yValue.replace(/[^0-9.-]/g, ''));
-      if (!isNaN(parsed)) {
-        yValue = parsed;
-      }
+    const result: any = {
+      [xColumn]: xValue,
+      [yColumn]: yValue,
+      x: xValue,
+      y: yValue
+    };
+    
+    // Add series column if specified
+    if (seriesColumn && item[seriesColumn]) {
+      result[seriesColumn] = item[seriesColumn];
+      result.series = item[seriesColumn];
     }
     
-    return {
-      x: xValue,
-      y: yValue,
-      originalX: item[xColumn],
-      originalY: item[yColumn],
-      index: index
-    };
+    return result;
   });
 }
 
