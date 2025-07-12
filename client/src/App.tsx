@@ -5,12 +5,14 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/components/theme/theme-provider";
 import WorkpacksGenie from "@/pages/workpacks-genie-original";
+import ChartTestPage from "@/pages/chart-test";
 import NotFound from "@/pages/not-found";
 
 function Router() {
   return (
     <Switch>
       <Route path="/" component={WorkpacksGenie} />
+      <Route path="/chart-test" component={ChartTestPage} />
       <Route component={NotFound} />
     </Switch>
   );

@@ -96,15 +96,10 @@ export function EnhancedChartRenderer({ chart }: EnhancedChartProps) {
         );
 
       case 'bar':
-      case 'horizontal_bar':
-        const isHorizontal = chart.type === 'horizontal_bar';
-        
         // Select the appropriate dataKey for chart rendering
         const dataKey = chart.transform_y === 'sum' && chart.y ? chart.y :
                         chart.transform_y === 'count' || chart.title?.includes('Count') ? 'count' :
                         chart.y || 'value';
-                        
-
 
         return (
           <div style={{ width: '100%', height: '450px' }}>
@@ -112,53 +107,99 @@ export function EnhancedChartRenderer({ chart }: EnhancedChartProps) {
               width={800}
               height={450}
               data={chart.data} 
-              margin={{ top: 20, right: 30, left: isHorizontal ? 120 : 40, bottom: isHorizontal ? 20 : 100 }}
+              margin={{ top: 20, right: 30, left: 40, bottom: 100 }}
             >
             <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
-            {isHorizontal ? (
-              <>
-                <XAxis 
-                  type="number" 
-                  tick={{ fontSize: 12 }} 
-                  label={{ value: dataKey, position: 'insideBottom', offset: -5 }}
-                />
-                <YAxis 
-                  dataKey={chart.x} 
-                  type="category"
-                  tick={{ fontSize: 11 }}
-                  width={120}
-                  label={{ value: chart.x, angle: -90, position: 'insideLeft' }}
-                />
-              </>
-            ) : (
-              <>
-                <XAxis 
-                  dataKey={chart.x} 
-                  type="category"
-                  tick={{ fontSize: 11 }}
-                  angle={-45}
-                  textAnchor="end"
-                  height={100}
-                  interval={0}
-                  label={{ value: chart.x, position: 'insideBottom', offset: -5 }}
-                />
-                <YAxis 
-                  type="number"
-                  tick={{ fontSize: 12 }} 
-                  width={60}
-                  label={{ value: dataKey, angle: -90, position: 'insideLeft' }}
-                />
-              </>
-            )}
+            <XAxis 
+              dataKey={chart.x} 
+              type="category"
+              tick={{ fontSize: 11 }}
+              angle={-45}
+              textAnchor="end"
+              height={100}
+              interval={0}
+              label={{ value: chart.x, position: 'insideBottom', offset: -5 }}
+            />
+            <YAxis 
+              type="number"
+              tick={{ fontSize: 12 }} 
+              width={60}
+              label={{ value: dataKey, angle: -90, position: 'insideLeft' }}
+            />
             <Tooltip content={<CustomTooltip />} />
             <Bar 
               dataKey={dataKey}
-              radius={isHorizontal ? [0, 4, 4, 0] : [4, 4, 0, 0]}
+              radius={[4, 4, 0, 0]}
             >
               {chart.data.map((entry: any, dataIndex: number) => (
                 <Cell key={`cell-${dataIndex}`} fill={COLORS[dataIndex % COLORS.length]} />
               ))}
             </Bar>
+            </BarChart>
+          </div>
+        );
+
+      case 'horizontal_bar':
+        // For horizontal bar charts, find all numeric columns that have meaningful data
+        const horizontalNumericKeys = chart.data.length > 0 ? 
+          Object.keys(chart.data[0]).filter(key => {
+            const value = chart.data[0][key];
+            return key !== chart.x && 
+                   key !== 'name' && 
+                   key !== 'count' && 
+                   key !== 'value' &&
+                   typeof value === 'number' &&
+                   !isNaN(value);
+          }) : [];
+        
+        // Filter to only include series that have non-zero values in at least one data point
+        const horizontalSeriesKeys = horizontalNumericKeys.filter(key => 
+          chart.data.some(item => item[key] > 0)
+        );
+        
+        return (
+          <div style={{ width: '100%', height: '500px' }}>
+            <BarChart 
+              data={chart.data} 
+              layout="horizontal"
+              width={800} 
+              height={500}
+              margin={{ top: 20, right: 130, left: 120, bottom: 20 }}
+            >
+              <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
+              <XAxis 
+                type="number" 
+                tick={{ fontSize: 12 }} 
+                domain={[0, 'dataMax']}
+                label={{ value: chart.y || 'Value', position: 'insideBottom', offset: -5 }}
+              />
+              <YAxis 
+                dataKey={chart.x} 
+                type="category"
+                tick={{ fontSize: 11 }}
+                width={120}
+                label={{ value: chart.x, angle: -90, position: 'insideLeft' }}
+              />
+              <Tooltip content={<CustomTooltip />} />
+              <Legend />
+              {horizontalSeriesKeys.length > 0 ? (
+                horizontalSeriesKeys.map((key, index) => (
+                  <Bar
+                    key={key}
+                    dataKey={key}
+                    stackId="horizontal-stack"
+                    fill={COLORS[index % COLORS.length]}
+                    radius={index === horizontalSeriesKeys.length - 1 ? [0, 4, 4, 0] : undefined}
+                  />
+                ))
+              ) : (
+                // Fallback: if no series detected, show count/value
+                <Bar
+                  dataKey="count"
+                  fill={COLORS[0]}
+                  radius={[0, 4, 4, 0]}
+                />
+              )}
             </BarChart>
           </div>
         );
@@ -358,8 +399,77 @@ export function EnhancedChartRenderer({ chart }: EnhancedChartProps) {
           </div>
         );
 
-      case 'scatter':
       case 'bubble':
+        // Special handling for bubble charts with size-based bubbles
+        if (chart.series && chart.data.some(item => item.scaledSize)) {
+          return (
+            <div style={{ width: '100%', height: '450px' }}>
+              <ScatterChart data={chart.data} width={800} height={450} margin={{ top: 20, right: 130, left: 40, bottom: 100 }}>
+                <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
+                <XAxis 
+                  dataKey={chart.x}
+                  type="number"
+                  tick={{ fontSize: 11 }}
+                  name={chart.x}
+                  label={{ value: chart.x, position: 'insideBottom', offset: -5 }}
+                />
+                <YAxis 
+                  dataKey={chart.y}
+                  type="number"
+                  tick={{ fontSize: 12 }}
+                  width={60}
+                  name={chart.y}
+                  domain={['dataMin', 'dataMax']}
+                  label={{ value: chart.y, angle: -90, position: 'insideLeft' }}
+                />
+                <Tooltip 
+                  content={({ active, payload }) => {
+                    if (active && payload && payload.length) {
+                      const data = payload[0].payload;
+                      return (
+                        <div className="bg-white dark:bg-slate-800 p-3 border border-gray-200 dark:border-slate-700 rounded-lg shadow-lg">
+                          <p className="font-semibold">{data.name}</p>
+                          <p className="text-sm">{chart.x}: {data.x}</p>
+                          <p className="text-sm">{chart.y}: {data.y}</p>
+                          <p className="text-sm">{chart.series}: {data.size}</p>
+                          <p className="text-sm text-gray-600 dark:text-gray-300">Size: {data.sizePercent}% of total</p>
+                        </div>
+                      );
+                    }
+                    return null;
+                  }}
+                />
+                <Legend />
+                {chart.data.map((entry: any, index: number) => (
+                  <Scatter
+                    key={`bubble-${index}`}
+                    name={entry.name}
+                    data={[entry]}
+                    fill={COLORS[index % COLORS.length]}
+                    shape={(props: any) => {
+                      const { cx, cy, payload } = props;
+                      const radius = payload.bubbleRadius || Math.sqrt(payload.scaledSize || 50) / 2;
+                      return (
+                        <circle
+                          cx={cx}
+                          cy={cy}
+                          r={radius}
+                          fill={COLORS[index % COLORS.length]}
+                          fillOpacity={0.6}
+                          stroke={COLORS[index % COLORS.length]}
+                          strokeWidth={2}
+                        />
+                      );
+                    }}
+                  />
+                ))}
+              </ScatterChart>
+            </div>
+          );
+        }
+        // Fall through to regular scatter chart if no special bubble data
+        
+      case 'scatter':
         // Check if x-axis contains dates or categorical data (like quarters)
         const hasDateData = chart.data.some(item => {
           const xValue = item.x || item[chart.x];
@@ -607,7 +717,7 @@ export function EnhancedChartRenderer({ chart }: EnhancedChartProps) {
   };
 
   return (
-    <div className="h-80 w-full">
+    <div className="h-[500px] w-full relative">
       <ResponsiveContainer width="100%" height="100%">
         {renderChart()}
       </ResponsiveContainer>

@@ -11,7 +11,7 @@ A comprehensive full-stack web application that provides an AI-powered chat inte
 - **Excel Export**: Export work package data and reports to Excel format
 - **Dark/Light Theme**: Complete theme switching with system preference detection
 - **Responsive Design**: Mobile-first design that works on all devices
-- **PostgreSQL Integration**: Full database persistence with Drizzle ORM
+- **In-Memory Storage**: Fast, reliable data storage with automatic sample data
 
 ## 🏗️ Architecture
 
@@ -26,68 +26,30 @@ A comprehensive full-stack web application that provides an AI-powered chat inte
 ### Backend (Node.js + Express)
 - **Runtime**: Node.js with Express.js framework
 - **Language**: TypeScript for full-stack type safety
-- **Database**: PostgreSQL with Drizzle ORM
+- **Storage**: In-memory storage (MemStorage) with sample data
 - **API Pattern**: RESTful endpoints with JSON responses
-- **Session Management**: Express sessions with PostgreSQL storage
+- **Session Management**: Express sessions with in-memory storage
 
-### Database Schema
+### Data Storage
 
-#### Users Table
-```sql
-CREATE TABLE users (
-  id SERIAL PRIMARY KEY,
-  username TEXT NOT NULL UNIQUE,
-  password TEXT NOT NULL
-);
-```
+The application uses in-memory storage (MemStorage) for fast, reliable data management:
 
-#### Conversations Table
-```sql
-CREATE TABLE conversations (
-  id SERIAL PRIMARY KEY,
-  title TEXT NOT NULL,
-  category TEXT NOT NULL DEFAULT 'general',
-  user_id TEXT NOT NULL,
-  created_at TIMESTAMP DEFAULT NOW() NOT NULL,
-  updated_at TIMESTAMP DEFAULT NOW() NOT NULL,
-  metadata JSONB
-);
-```
+#### Storage Architecture
+- **In-Memory Maps**: Fast data access using JavaScript Map objects
+- **Automatic Sample Data**: Pre-loaded work packages and conversations for testing
+- **TypeScript Types**: Full type safety with shared schema definitions
+- **Session Persistence**: Data persists during application runtime
 
-#### Messages Table
-```sql
-CREATE TABLE messages (
-  id SERIAL PRIMARY KEY,
-  conversation_id INTEGER REFERENCES conversations(id) NOT NULL,
-  content TEXT NOT NULL,
-  sender TEXT NOT NULL, -- 'user' or 'bot'
-  message_type TEXT DEFAULT 'text', -- 'text', 'table', 'visualization'
-  data JSONB, -- For storing table data, chart data, etc.
-  created_at TIMESTAMP DEFAULT NOW() NOT NULL
-);
-```
-
-#### Work Packages Table
-```sql
-CREATE TABLE work_packages (
-  id SERIAL PRIMARY KEY,
-  wp_id TEXT NOT NULL UNIQUE,
-  description TEXT NOT NULL,
-  status TEXT NOT NULL,
-  progress INTEGER DEFAULT 0,
-  due_date TIMESTAMP,
-  assigned_team TEXT,
-  cwa_id TEXT,
-  created_at TIMESTAMP DEFAULT NOW() NOT NULL,
-  updated_at TIMESTAMP DEFAULT NOW() NOT NULL
-);
-```
+#### Data Models
+- **Users**: Basic user authentication and management
+- **Conversations**: Chat sessions with categorization and metadata
+- **Messages**: Individual chat messages with support for different content types
+- **Work Packages**: Project work items with status tracking and progress monitoring
 
 ## 🛠️ Installation & Setup
 
 ### Prerequisites
-- Node.js 20+ 
-- PostgreSQL database (automatically provided by Replit)
+- Node.js 20+ (automatically provided by Replit)
 
 ### Environment Configuration
 
@@ -97,14 +59,6 @@ The application uses the following environment variables:
 # Frontend Environment Variables
 VITE_API_URL=http://localhost:5000
 VITE_AI_BACKEND_URL=http://localhost:5000/api/datavis
-
-# Database Configuration (automatically set by Replit)
-DATABASE_URL=postgresql://username:password@host:5432/database
-PGHOST=your_neon_host
-PGPORT=5432
-PGUSER=neondb_owner
-PGPASSWORD=your_password
-PGDATABASE=neondb
 
 # Server Configuration
 NODE_ENV=development
@@ -125,21 +79,19 @@ LOG_LEVEL=info
    npm install
    ```
 
-2. **Setup Database**
-   ```bash
-   # Push schema to database
-   npm run db:push
-   
-   # Seed with sample data
-   npx tsx server/seed.ts
-   ```
-
-3. **Start Development Server**
+2. **Start Development Server**
    ```bash
    npm run dev
    ```
 
 The application will be available at `http://localhost:5000`
+
+### Sample Data
+
+The application automatically loads sample work packages and conversations when started:
+- Sample work packages with various statuses and progress levels
+- Pre-configured conversation categories for testing
+- Sample messages demonstrating different content types
 
 ## 📊 API Endpoints
 
@@ -211,21 +163,14 @@ The application will be available at `http://localhost:5000`
 - **Real-time Updates**: Dynamic chart generation based on live data
 - **Multiple Visualizations**: Display multiple charts simultaneously
 
-## 🗃️ Database Management
+## 🗃️ Data Management
 
-### Schema Management
-The application uses Drizzle ORM for database operations:
+### In-Memory Storage
+The application uses in-memory storage for fast, reliable data management:
 
-```bash
-# Push schema changes to database
-npm run db:push
-
-# Generate migrations (if needed)
-npx drizzle-kit generate
-
-# View database studio
-npx drizzle-kit studio
-```
+- **Automatic Initialization**: Sample data is loaded when the application starts
+- **Runtime Persistence**: Data persists during the application session
+- **Type Safety**: Full TypeScript support with shared schema definitions
 
 ### Data Types and Relationships
 
@@ -280,21 +225,19 @@ type WorkPackage = {
 ## 🔧 Configuration Files
 
 ### Key Configuration Files
-- `drizzle.config.ts`: Database configuration and connection settings
 - `vite.config.ts`: Frontend build configuration with path aliases
 - `tailwind.config.ts`: Theme customization and styling configuration
 - `tsconfig.json`: TypeScript configuration for client/server/shared code
+- `package.json`: Dependencies and build scripts
 
 ### Build Scripts
 ```json
 {
   "scripts": {
     "dev": "NODE_ENV=development tsx server/index.ts",
-    "build": "npm run build:frontend && npm run build:backend",
-    "build:frontend": "vite build",
-    "build:backend": "esbuild server/index.ts --bundle --platform=node --target=node20 --outfile=dist/server.js --external:@neondatabase/serverless --external:ws",
-    "db:push": "drizzle-kit push",
-    "db:studio": "drizzle-kit studio"
+    "build": "vite build && esbuild server/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist",
+    "start": "NODE_ENV=production node dist/index.js",
+    "check": "tsc"
   }
 }
 ```
@@ -307,18 +250,18 @@ type WorkPackage = {
 npm run build
 
 # Start production server
-node dist/server.js
+npm start
 ```
 
 ### Environment Setup
 - **Frontend**: Static assets served from `/dist/public`
 - **Backend**: ESM bundle targeting Node.js 20+
-- **Database**: PostgreSQL with connection pooling
+- **Storage**: In-memory storage with automatic sample data initialization
 - **Static Serving**: Express serves frontend assets in production
 
 ## 🔒 Security Features
 
-- **Session Management**: Secure session handling with PostgreSQL storage
+- **Session Management**: Secure session handling with in-memory storage
 - **Input Validation**: Zod schema validation for all API inputs
 - **CORS Protection**: Configured CORS policies for frontend-backend communication
 - **Environment Isolation**: Separate environment configurations for development/production
@@ -328,13 +271,13 @@ node dist/server.js
 ### Code Quality
 - **TypeScript**: Strict mode enabled for type safety
 - **ESLint**: Code quality and consistency enforcement
-- **Drizzle**: Type-safe database operations
+- **In-Memory Storage**: Type-safe storage operations with shared schemas
 - **Zod**: Runtime type validation for API inputs
 
 ### Development Tools
 - **Hot Module Replacement**: Vite HMR for fast development
 - **File Watching**: Automatic server restarts with tsx
-- **Database Studio**: Visual database management with Drizzle Kit
+- **Type Safety**: Full TypeScript support across frontend and backend
 
 ## 📚 Additional Resources
 

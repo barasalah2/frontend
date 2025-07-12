@@ -10,7 +10,8 @@ import { Button } from "@/components/ui/button";
 import { EnhancedWorkPackageTable } from "@/components/tables/enhanced-work-package-table";
 import { GanttChart } from "@/components/visualizations/gantt-chart";
 import { ProgressChart } from "@/components/visualizations/progress-chart";
-import { Menu, Download, BarChart3, Bot, User } from "lucide-react";
+import { Menu, Download, BarChart3, Bot, User, TestTube } from "lucide-react";
+import { Link } from "wouter";
 
 interface Message {
   id: number;
@@ -305,6 +306,15 @@ export default function WorkpacksGenie() {
               </div>
             </div>
             <div className="flex items-center space-x-3">
+              <Link href="/chart-test">
+                <Button
+                  variant="outline"
+                  size="sm"
+                >
+                  <TestTube className="h-4 w-4 mr-2" />
+                  Chart Test
+                </Button>
+              </Link>
               <Button
                 onClick={handleExportReport}
                 className="bg-workpack-green hover:bg-green-700 text-white"

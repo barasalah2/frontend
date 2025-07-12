@@ -985,6 +985,60 @@ function processScatterChart(data: any[], spec: VisualizationSpec): any[] {
     return [];
   }
   
+  // Special handling for bubble charts when series column is specified
+  if (spec.type === 'bubble' && seriesColumn) {
+    // Process bubble chart data with size calculation
+    const bubbleData = data.map(item => {
+      const xValue = parseFloat(String(item[xColumn]).replace(/[^0-9.-]/g, '')) || 0;
+      const yValue = parseFloat(String(item[yColumn]).replace(/[^0-9.-]/g, '')) || 0;
+      const seriesValue = item[seriesColumn];
+      
+      // Determine if series value is numeric or categorical
+      const seriesNumeric = parseFloat(String(seriesValue).replace(/[^0-9.-]/g, ''));
+      let size = 0;
+      
+      if (!isNaN(seriesNumeric) && isFinite(seriesNumeric)) {
+        // Series is numeric - use as size value
+        size = seriesNumeric;
+      } else {
+        // Series is categorical - count occurrences
+        const categoryCount = data.filter(d => d[seriesColumn] === seriesValue).length;
+        size = categoryCount;
+      }
+      
+      return {
+        x: xValue,
+        y: yValue,
+        [xColumn]: xValue,
+        [yColumn]: yValue,
+        [seriesColumn]: seriesValue,
+        size: size,
+        name: seriesValue
+      };
+    });
+    
+    // Calculate size using the formula: bubble_area = (team_size / max_team_size) * max_area
+    const maxSize = Math.max(...bubbleData.map(item => item.size));
+    const totalSize = bubbleData.reduce((sum, item) => sum + item.size, 0);
+    const maxArea = 8000; // Maximum area for the largest bubble
+    
+    return bubbleData.map(item => {
+      // Calculate bubble area as proportion of max area
+      const bubbleArea = (item.size / maxSize) * maxArea;
+      // Calculate radius from area: radius = sqrt(area / π)
+      const radius = Math.sqrt(bubbleArea / Math.PI);
+      
+      return {
+        ...item,
+        // Scale size as percentage of total (for tooltip display)
+        sizePercent: Math.round((item.size / totalSize) * 100),
+        // Store the calculated radius for rendering
+        scaledSize: Math.round(radius * radius * Math.PI), // Store area for shape calculation
+        bubbleRadius: Math.round(radius)
+      };
+    });
+  }
+  
   // Handle data aggregation when transforms are specified
   if (xTransform && xTransform.startsWith('date_group:') && yTransform === 'sum') {
     const groupType = xTransform.split(':')[1];
@@ -1482,15 +1536,7 @@ export function DynamicChart({ data, specs }: DynamicChartProps) {
   return (
     <div className="space-y-6">
       {processedCharts.map((chart, index) => (
-        <div key={chart.id} className="bg-gray-50 dark:bg-slate-900 rounded-lg p-4">
-          <h3 className="text-lg font-semibold mb-4 text-workpack-text dark:text-white">
-            {chart.title}
-          </h3>
-          {chart.rationale && (
-            <p className="text-sm text-gray-600 dark:text-gray-400 mb-3 italic">
-              {chart.rationale}
-            </p>
-          )}
+        <div key={chart.id} className="w-full">
           <EnhancedChartRenderer chart={chart} />
         </div>
       ))}
