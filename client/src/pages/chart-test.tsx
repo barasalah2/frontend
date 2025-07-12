@@ -156,13 +156,13 @@ const coreChartSpecs = [
   },
   {
     type: "horizontal_bar" as const,
-    x: "progress",
-    y: "cwaId",
+    x: "status",
+    y: "budget",
     series: null,
-    title: "Count of IWPs by Planned Finish Date (Monthly)",
-    transform_x: "sum",
-    transform_y: null,
-    rationale: "Analyzes the trend of IWP planned finish dates over time",
+    title: "Total Budget by Status (Horizontal)",
+    transform_x: null,
+    transform_y: "sum",
+    rationale: "Shows total budget allocation across different status categories in horizontal layout",
   },
 ];
 

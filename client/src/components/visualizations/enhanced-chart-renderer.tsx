@@ -140,12 +140,32 @@ export function EnhancedChartRenderer({ chart }: EnhancedChartProps) {
         );
 
       case 'horizontal_bar':
-        // Simple horizontal bar chart logic - always treat as single series
+        // Enhanced horizontal bar chart with proper data key detection
         const hBarDataKey = chart.data[0]?.count !== undefined ? 'count' : 'value';
         
-        console.log('Horizontal bar chart FIXED:', {
+        // Ensure data has the required structure and is sorted for better visualization
+        const horizontalData = chart.data
+          .filter(item => item && typeof item === 'object') // Filter out invalid items
+          .map((item, index) => {
+            const categoryValue = item[chart.x || 'category'] || item.name || `Item ${index + 1}`;
+            const numericValue = Number(item[hBarDataKey] || item.value || item.count || 0);
+            
+            return {
+              ...item,
+              [hBarDataKey]: numericValue,
+              [chart.x || 'category']: String(categoryValue),
+              // Ensure we have clean numeric values
+              value: numericValue,
+              count: numericValue
+            };
+          })
+          .filter(item => !isNaN(item[hBarDataKey]) && item[hBarDataKey] > 0) // Filter out invalid values
+          .sort((a, b) => (b[hBarDataKey] || 0) - (a[hBarDataKey] || 0)); // Sort by value descending
+        
+        console.log('Horizontal bar chart enhanced:', {
           dataKey: hBarDataKey,
-          data: chart.data.slice(0, 3),
+          data: horizontalData.slice(0, 3),
+          totalItems: horizontalData.length,
           chartSpec: {
             x: chart.x,
             y: chart.y,
@@ -155,13 +175,22 @@ export function EnhancedChartRenderer({ chart }: EnhancedChartProps) {
           }
         });
         
+        // If no data, show empty state
+        if (!horizontalData.length) {
+          return (
+            <div className="flex items-center justify-center h-[400px] text-gray-500">
+              No data available for horizontal bar chart
+            </div>
+          );
+        }
+
         return (
           <div style={{ width: '100%', height: '500px' }}>
             <ResponsiveContainer width="100%" height="100%">
               <BarChart 
-                data={chart.data} 
-                layout="horizontal"
-                margin={{ top: 20, right: 30, left: 120, bottom: 60 }}
+                data={horizontalData} 
+                layout="vertical"
+                margin={{ top: 20, right: 50, left: 120, bottom: 60 }}
               >
                 <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
                 <XAxis 
@@ -178,7 +207,21 @@ export function EnhancedChartRenderer({ chart }: EnhancedChartProps) {
                   interval={0}
                   label={{ value: chart.x || 'Category', angle: -90, position: 'insideLeft' }}
                 />
-                <Tooltip content={<CustomTooltip />} />
+                <Tooltip 
+                  content={({ active, payload, label }) => {
+                    if (active && payload && payload.length) {
+                      return (
+                        <div className="bg-white p-3 border border-gray-300 rounded shadow">
+                          <p className="font-semibold">{label}</p>
+                          <p className="text-blue-600">
+                            {chart.y || 'Value'}: {payload[0].value?.toLocaleString()}
+                          </p>
+                        </div>
+                      );
+                    }
+                    return null;
+                  }}
+                />
                 <Bar
                   dataKey={hBarDataKey}
                   fill={COLORS[0]}

@@ -1,0 +1,154 @@
+/* ---------------------------------------------------------------
+   genericChart.ts
+   External deps: chart.js ^4
+   ------------------------------------------------------------- */
+
+import {
+  Chart,
+  ChartData,
+  ChartDataset,
+  registerables,
+  BarControllerChartOptions,
+} from "chart.js";
+Chart.register(...registerables);
+
+/** Minimal schema for your spec objects */
+export interface ChartSpec {
+  type: "bar" | "horizontal_bar" | "stacked_bar";
+  x: string;          // field for x‑axis category
+  y: string;          // field with numeric/countable values
+  series: string | null; // field used for stacks / color groups
+  title: string;
+  transform_x: "date_group:month_year" | null; // for extensibility
+  transform_y: "count" | "sum" | null;
+}
+
+/** Generic row type (record of any primitive values) */
+export type DataRow = Record<string, string | number | Date>;
+
+/** Main entry point */
+export function drawGenericChart(
+  ctx: CanvasRenderingContext2D,
+  spec: ChartSpec,
+  rows: DataRow[]
+): Chart {
+  // ------------------------------------------------------------------
+  // 1) Pre‑aggregate data according to transform_y
+  // ------------------------------------------------------------------
+  const agg = new Map<string, Map<string, number>>(); // status -> series -> value
+
+  rows.forEach((row) => {
+    const xVal = String(row[spec.x]);
+    const seriesVal = spec.series ? String(row[spec.series]) : "_NOSERIES_";
+    const bucket = agg.get(xVal) ?? new Map<string, number>();
+    agg.set(xVal, bucket);
+
+    const current = bucket.get(seriesVal) ?? 0;
+    const increment =
+      spec.transform_y === "count"
+        ? 1
+        : Number(row[spec.y]) || 0; // sum mode
+    bucket.set(seriesVal, current + increment);
+  });
+
+  // ------------------------------------------------------------------
+  // 2) Collect unique x categories and series keys (stable order)
+  // ------------------------------------------------------------------
+  const xCats = Array.from(agg.keys()).sort();
+  const seriesKeys =
+    spec.series === null
+      ? ["_NOSERIES_"]
+      : Array.from(
+          new Set(
+            rows.map((r) => String(r[spec.series as string]))
+          )
+        ).sort();
+
+  // ------------------------------------------------------------------
+  // 3) Build datasets (one per series key)
+  // ------------------------------------------------------------------
+  const baseColors = [
+    "#4e79a7",
+    "#f28e2b",
+    "#e15759",
+    "#76b7b2",
+    "#59a14f",
+    "#edc948",
+    "#b07aa1",
+  ];
+  const datasets: ChartDataset<"bar", number[]>[] = seriesKeys.map(
+    (sKey, idx) => ({
+      label: sKey === "_NOSERIES_" ? spec.y : sKey,
+      data: xCats.map((xc) => agg.get(xc)?.get(sKey) ?? 0),
+      backgroundColor: baseColors[idx % baseColors.length],
+      stack: spec.type === "stacked_bar" ? "stack1" : undefined,
+    })
+  );
+
+  // ------------------------------------------------------------------
+  // 4) Chart.js config
+  // ------------------------------------------------------------------
+  const orientation = spec.type === "horizontal_bar" ? "y" : "x";
+
+  const data: ChartData<"bar"> = {
+    labels: xCats,
+    datasets,
+  };
+
+  const options: BarControllerChartOptions = {
+    indexAxis: orientation === "y" ? "y" : "x",
+    responsive: true,
+    plugins: {
+      title: { display: true, text: spec.title },
+      legend: { position: "top" },
+      tooltip: { intersect: false },
+    },
+    scales: {
+      x: {
+        stacked: spec.type === "stacked_bar",
+        title: { display: orientation === "x", text: spec.x },
+      },
+      y: {
+        stacked: spec.type === "stacked_bar",
+        title: { display: orientation === "y", text: spec.x },
+      },
+    },
+  };
+
+  return new Chart(ctx, { type: "bar", data, options });
+}
+How to use
+ts
+Copy
+Edit
+import { drawGenericChart, ChartSpec } from "./genericChart";
+
+const spec: ChartSpec = {
+  type: "bar",
+  x: "iwp_status",
+  y: "iwp_id",
+  series: null,
+  title: "Count of IWP by Status",
+  transform_x: null,
+  transform_y: "count",
+  rationale: "Shows the distribution of IWP across different statuses",
+} as const; // <- satisfies ChartSpec
+
+const rows = [
+  { iwp_id: "IWP-001", iwp_status: "Planned" },
+  { iwp_id: "IWP-002", iwp_status: "Planned" },
+  { iwp_id: "IWP-003", iwp_status: "In Progress" },
+  // …
+];
+
+const ctx = (
+  document.getElementById("myCanvas") as HTMLCanvasElement
+).getContext("2d")!;
+drawGenericChart(ctx, spec, rows);
+Extending later
+
+Add new transform_x cases (e.g., "date_group:month_year") by preprocessing xVal.
+
+Add "sum" or "mean" to transform_y with minimal tweaks.
+
+Support more chart types (scatter, treemap, etc.) by branching on spec.type inside the function.
