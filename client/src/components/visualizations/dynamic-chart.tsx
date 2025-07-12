@@ -1,15 +1,18 @@
 import { useMemo } from 'react';
-import { ResponsiveContainer, PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, LineChart, Line, ScatterChart, Scatter, AreaChart, Area } from 'recharts';
+import { EnhancedChartRenderer } from './enhanced-chart-renderer';
 
 interface VisualizationSpec {
-  type: 'line' | 'bar' | 'stacked_bar' | 'scatter' | 'pie' | 'donut' | 'histogram' | 'box' | 'area' | 'heatmap';
+  type: 'line' | 'area' | 'bar' | 'stacked_bar' | 'grouped_bar' | 'horizontal_bar' | 'scatter' | 'bubble' | 'pie' | 'donut' | 'histogram' | 'box' | 'violin' | 'heatmap' | 'treemap' | 'sunburst' | 'radar' | 'waterfall' | 'funnel';
   x: string | null;
   y: string | null;
-  color: string | null;
+  series: string | null; // for grouping/stacking/bubble size
   title: string;
-  transform?: string | null; // Legacy support
-  transform_x?: string | null; // New separate transforms
+  transform_x?: string | null;
   transform_y?: string | null;
+  rationale?: string;
+  // Legacy support
+  transform?: string | null;
+  color?: string | null;
 }
 
 interface DynamicChartProps {
@@ -24,9 +27,9 @@ const COLORS = [
   '#fbbf24', '#f87171', '#34d399', '#60a5fa', '#c084fc'
 ];
 
-// Transform functions for different chart types
+// Enhanced transform functions supporting all DataVisAgent transformations
 function applyTransform(data: any[], column: string, transform: string | null): any[] {
-  if (!transform) return data;
+  if (!transform || !column) return data;
   
   if (transform === 'count') {
     const counts = data.reduce((acc, item) => {
@@ -208,42 +211,245 @@ function applyTransform(data: any[], column: string, transform: string | null): 
       return acc;
     }, {} as Record<string, number>);
     const sorted = Object.entries(counts).sort(([, a], [, b]) => b - a).slice(0, k);
-    return sorted.map(([name, value]) => ({ [column]: name, count: value }));
+    return sorted.map(([name, value]) => ({ [column]: name, count: value, value: value }));
+  }
+  
+  if (transform.startsWith('bottomk:')) {
+    const k = parseInt(transform.split(':')[1]) || 5;
+    const counts = data.reduce((acc, item) => {
+      const key = item[column] || 'Unknown';
+      acc[key] = (acc[key] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>);
+    const sorted = Object.entries(counts).sort(([, a], [, b]) => a - b).slice(0, k);
+    return sorted.map(([name, value]) => ({ [column]: name, count: value, value: value }));
+  }
+  
+  if (transform.startsWith('other_group:')) {
+    const threshold = parseFloat(transform.split(':')[1]) || 0.05;
+    const counts = data.reduce((acc, item) => {
+      const key = item[column] || 'Unknown';
+      acc[key] = (acc[key] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>);
+    
+    const total = Object.values(counts).reduce((sum, count) => sum + count, 0);
+    const minCount = total * threshold;
+    
+    let result = [];
+    let otherCount = 0;
+    
+    for (const [name, count] of Object.entries(counts)) {
+      if (count >= minCount) {
+        result.push({ [column]: name, count, value: count });
+      } else {
+        otherCount += count;
+      }
+    }
+    
+    if (otherCount > 0) {
+      result.push({ [column]: 'Other', count: otherCount, value: otherCount });
+    }
+    
+    return result;
+  }
+  
+  if (transform === 'alphabetical') {
+    return [...data].sort((a, b) => String(a[column] || '').localeCompare(String(b[column] || '')));
+  }
+  
+  if (transform === 'frequency') {
+    const counts = data.reduce((acc, item) => {
+      const key = item[column] || 'Unknown';
+      acc[key] = (acc[key] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>);
+    
+    return Object.entries(counts)
+      .sort(([, a], [, b]) => b - a)
+      .map(([name, value]) => ({ [column]: name, count: value, value: value }));
+  }
+  
+  if (transform.startsWith('bin:')) {
+    const binParam = transform.split(':')[1];
+    const values = data.map(item => parseFloat(String(item[column])) || 0).filter(v => !isNaN(v));
+    
+    if (values.length === 0) return [];
+    
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    
+    let binCount;
+    let bins;
+    
+    if (binParam === 'auto') {
+      binCount = Math.ceil(Math.sqrt(values.length));
+    } else if (binParam === 'quartile') {
+      values.sort((a, b) => a - b);
+      const q1 = values[Math.floor(values.length * 0.25)];
+      const q2 = values[Math.floor(values.length * 0.5)];
+      const q3 = values[Math.floor(values.length * 0.75)];
+      
+      bins = [
+        { range: `Q1 (≤${q1.toFixed(1)})`, count: 0, min: min, max: q1 },
+        { range: `Q2 (${q1.toFixed(1)}-${q2.toFixed(1)})`, count: 0, min: q1, max: q2 },
+        { range: `Q3 (${q2.toFixed(1)}-${q3.toFixed(1)})`, count: 0, min: q2, max: q3 },
+        { range: `Q4 (≥${q3.toFixed(1)})`, count: 0, min: q3, max: max }
+      ];
+      
+      values.forEach(value => {
+        if (value <= q1) bins[0].count++;
+        else if (value <= q2) bins[1].count++;
+        else if (value <= q3) bins[2].count++;
+        else bins[3].count++;
+      });
+      
+      return bins.map(bin => ({ [column]: bin.range, count: bin.count, value: bin.count }));
+    } else {
+      binCount = parseInt(binParam) || 10;
+    }
+    
+    const binWidth = (max - min) / binCount;
+    
+    bins = Array.from({ length: binCount }, (_, i) => ({
+      range: `${(min + i * binWidth).toFixed(1)}-${(min + (i + 1) * binWidth).toFixed(1)}`,
+      count: 0,
+      min: min + i * binWidth,
+      max: min + (i + 1) * binWidth
+    }));
+    
+    values.forEach(value => {
+      const binIndex = Math.min(Math.floor((value - min) / binWidth), binCount - 1);
+      bins[binIndex].count++;
+    });
+    
+    return bins.map(bin => ({ [column]: bin.range, count: bin.count, value: bin.count }));
+  }
+  
+  if (transform === 'log_scale') {
+    return data.map(item => ({
+      ...item,
+      [column + '_log']: Math.log10(Math.max(parseFloat(String(item[column])) || 1, 1)),
+      value: Math.log10(Math.max(parseFloat(String(item[column])) || 1, 1))
+    }));
+  }
+  
+  if (transform === 'normalize') {
+    const values = data.map(item => parseFloat(String(item[column])) || 0);
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    const range = max - min;
+    
+    return data.map((item, index) => ({
+      ...item,
+      [column + '_normalized']: range === 0 ? 0 : (values[index] - min) / range,
+      value: range === 0 ? 0 : (values[index] - min) / range
+    }));
+  }
+  
+  if (transform === 'z_score') {
+    const values = data.map(item => parseFloat(String(item[column])) || 0);
+    const mean = values.reduce((sum, val) => sum + val, 0) / values.length;
+    const stdDev = Math.sqrt(values.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / values.length);
+    
+    return data.map((item, index) => ({
+      ...item,
+      [column + '_zscore']: stdDev === 0 ? 0 : (values[index] - mean) / stdDev,
+      value: stdDev === 0 ? 0 : (values[index] - mean) / stdDev
+    }));
+  }
+  
+  if (transform === 'sum') {
+    const sum = data.reduce((acc, item) => acc + (parseFloat(String(item[column])) || 0), 0);
+    return [{ [column]: 'Total', sum, value: sum, count: data.length }];
+  }
+  
+  if (transform === 'mean') {
+    const values = data.map(item => parseFloat(String(item[column])) || 0);
+    const mean = values.reduce((sum, val) => sum + val, 0) / values.length;
+    return [{ [column]: 'Average', mean, value: mean, count: values.length }];
+  }
+  
+  if (transform === 'median') {
+    const values = data.map(item => parseFloat(String(item[column])) || 0).sort((a, b) => a - b);
+    const median = values.length % 2 === 0 
+      ? (values[values.length / 2 - 1] + values[values.length / 2]) / 2 
+      : values[Math.floor(values.length / 2)];
+    return [{ [column]: 'Median', median, value: median, count: values.length }];
+  }
+  
+  if (transform === 'min') {
+    const min = Math.min(...data.map(item => parseFloat(String(item[column])) || 0));
+    return [{ [column]: 'Minimum', min, value: min, count: data.length }];
+  }
+  
+  if (transform === 'max') {
+    const max = Math.max(...data.map(item => parseFloat(String(item[column])) || 0));
+    return [{ [column]: 'Maximum', max, value: max, count: data.length }];
+  }
+  
+  if (transform === 'std') {
+    const values = data.map(item => parseFloat(String(item[column])) || 0);
+    const mean = values.reduce((sum, val) => sum + val, 0) / values.length;
+    const stdDev = Math.sqrt(values.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / values.length);
+    return [{ [column]: 'Std Dev', std: stdDev, value: stdDev, count: values.length }];
   }
   
   return data;
 }
 
 function processPieChart(data: any[], spec: VisualizationSpec): any[] {
-  const column = spec.x || spec.y; // Use x first for donut charts, fallback to y
-  if (!column || data.length === 0) return [];
+  const xColumn = spec.x;
+  const yColumn = spec.y;
+  
+  if (!xColumn || data.length === 0) return [];
   
   // Get transforms - use new format first, fallback to legacy
   const xTransform = spec.transform_x || spec.transform;
   const yTransform = spec.transform_y || spec.transform;
-  const transform = xTransform || yTransform || spec.transform;
   
-  // Handle transform logic properly for pie/donut charts
-  let processed;
-  let nameKey = column;
-  
-  if (yTransform === 'count' && spec.x) {
-    // For "count" transform on y, count occurrences by x column
-    processed = applyTransform(data, spec.x, xTransform || 'count');
-    nameKey = spec.x;
-  } else if (xTransform && spec.x) {
-    // Apply x transform if specified
-    processed = applyTransform(data, spec.x, xTransform);
-    nameKey = spec.x;
-  } else {
-    // Default processing
-    processed = applyTransform(data, column, transform);
+  // If we have both x and y columns with sum transform, aggregate by x and sum y values
+  if (yColumn && (yTransform === 'sum' || yTransform === 'aggregate_sum')) {
+    const sums = data.reduce((acc, item) => {
+      const key = item[xColumn] || 'Unknown';
+      const value = parseFloat(String(item[yColumn]).replace(/[^0-9.-]/g, '')) || 0;
+      acc[key] = (acc[key] || 0) + value;
+      return acc;
+    }, {} as Record<string, number>);
+    
+    const total = Object.values(sums).reduce((sum, val) => sum + val, 0);
+    
+    return Object.entries(sums).map(([name, value]) => ({
+      name,
+      value,
+      percentage: Math.round((value / total) * 100)
+    }));
   }
   
+  // If y-transform is count or no y-column, count occurrences by x-column
+  if (!yColumn || yTransform === 'count' || spec.title?.includes('Count')) {
+    const counts = data.reduce((acc, item) => {
+      const key = item[xColumn] || 'Unknown';
+      acc[key] = (acc[key] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>);
+    
+    const total = Object.values(counts).reduce((sum, val) => sum + val, 0);
+    
+    return Object.entries(counts).map(([name, value]) => ({
+      name,
+      value,
+      percentage: Math.round((value / total) * 100)
+    }));
+  }
+  
+  // Fallback to original processing
+  const column = xColumn;
+  const processed = applyTransform(data, column, xTransform || spec.transform);
   const total = processed.reduce((sum, item) => sum + (item.count || item.sum || item.value || 1), 0);
   
   return processed.map(item => ({
-    name: item[nameKey] || 'Unknown',
+    name: item[column] || 'Unknown',
     value: item.count || item.sum || item.value || 1,
     percentage: Math.round(((item.count || item.sum || item.value || 1) / total) * 100)
   }));
@@ -259,8 +465,8 @@ function processBarChart(data: any[], spec: VisualizationSpec): any[] {
   const xTransform = spec.transform_x || spec.transform;
   const yTransform = spec.transform_y || spec.transform;
   
-  // Handle aggregate_sum transform for y-axis
-  if (yTransform === 'aggregate_sum' && yColumn) {
+  // Handle aggregate_sum transform for y-axis or "sum" transform
+  if ((yTransform === 'aggregate_sum' || yTransform === 'sum') && yColumn) {
     // First, calculate sums for all groups
     const sums = data.reduce((acc, item) => {
       const key = item[xColumn] || 'Unknown';
@@ -271,13 +477,38 @@ function processBarChart(data: any[], spec: VisualizationSpec): any[] {
     
     let result = Object.entries(sums).map(([name, value]) => ({ 
       [xColumn]: name, 
-      [yColumn]: value 
+      [yColumn]: value,
+      value: value,  // Add value property for chart rendering
+      count: 1
     }));
     
     // Apply topk to the aggregated results if specified
     if (xTransform && xTransform.startsWith('topk:')) {
       const k = parseInt(xTransform.split(':')[1]) || 10;
       result = result.sort((a, b) => b[yColumn] - a[yColumn]).slice(0, k);
+    }
+    
+    return result;
+  }
+  
+  // Handle count transform for y-axis - count occurrences by x-column
+  if (yTransform === 'count' || spec.title?.includes('Count')) {
+    const counts = data.reduce((acc, item) => {
+      const key = item[xColumn] || 'Unknown';
+      acc[key] = (acc[key] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>);
+    
+    let result = Object.entries(counts).map(([name, value]) => ({ 
+      [xColumn]: name, 
+      count: value,
+      value: value
+    }));
+    
+    // Apply topk to the counted results if specified
+    if (xTransform && xTransform.startsWith('topk:')) {
+      const k = parseInt(xTransform.split(':')[1]) || 10;
+      result = result.sort((a, b) => b.count - a.count).slice(0, k);
     }
     
     return result;
@@ -312,6 +543,23 @@ function processBarChart(data: any[], spec: VisualizationSpec): any[] {
     }
     
     return result;
+  }
+
+  // Special handling for tag_count summation (since tag_count should be summed, not counted)
+  if (yColumn === 'tag_count' && yTransform === 'sum') {
+    const sums = data.reduce((acc, item) => {
+      const key = item[xColumn] || 'Unknown';
+      const value = parseFloat(String(item[yColumn]).replace(/[^0-9.-]/g, '')) || 0;
+      acc[key] = (acc[key] || 0) + value;
+      return acc;
+    }, {} as Record<string, number>);
+    
+    return Object.entries(sums).map(([name, value]) => ({ 
+      [xColumn]: name, 
+      [yColumn]: value,
+      value: value,
+      count: 1
+    }));
   }
   
   // If y-transform is count OR if the title contains "Count", count occurrences by x-column
@@ -370,8 +618,8 @@ function processBarChart(data: any[], spec: VisualizationSpec): any[] {
     return Object.entries(counts).map(([name, value]) => ({ [xColumn]: name, count: value, value: value }));
   }
   
-  // Legacy support for aggregate_sum in the transform field
-  if (spec.transform === 'aggregate_sum' && yColumn) {
+  // Legacy support for aggregate_sum or "sum" in the transform field
+  if ((spec.transform === 'aggregate_sum' || spec.transform === 'sum') && yColumn) {
     const sums = data.reduce((acc, item) => {
       const key = item[xColumn] || 'Unknown';
       const value = parseFloat(String(item[yColumn]).replace(/[^0-9.-]/g, '')) || 0;
@@ -379,6 +627,17 @@ function processBarChart(data: any[], spec: VisualizationSpec): any[] {
       return acc;
     }, {} as Record<string, number>);
     return Object.entries(sums).map(([name, value]) => ({ [xColumn]: name, [yColumn]: value, value: value, count: 1 }));
+  }
+
+  // Handle cases where y-column should be summed but no specific transform is applied
+  if (yColumn && !yTransform && !xTransform) {
+    // For non-aggregated data, return as-is but ensure consistent structure
+    return data.map(item => ({
+      [xColumn]: item[xColumn] || 'Unknown',
+      [yColumn]: parseFloat(String(item[yColumn]).replace(/[^0-9.-]/g, '')) || 0,
+      value: parseFloat(String(item[yColumn]).replace(/[^0-9.-]/g, '')) || 0,
+      count: 1
+    }));
   }
   
   // Legacy support for aggregate_mean in the transform field
@@ -408,17 +667,166 @@ function processBarChart(data: any[], spec: VisualizationSpec): any[] {
   return applyTransform(data, xColumn, xTransform || spec.transform);
 }
 
-function processLineChart(data: any[], spec: VisualizationSpec): any[] {
+function processWaterfallChart(data: any[], spec: VisualizationSpec): any[] {
   const xColumn = spec.x;
   const yColumn = spec.y;
   
-  if (!xColumn || data.length === 0) return [];
+  if (!xColumn || !yColumn || data.length === 0) return [];
+  
+  let cumulativeValue = 0;
+  
+  return data.map((item, index) => {
+    const value = parseFloat(String(item[yColumn])) || 0;
+    const startValue = cumulativeValue;
+    cumulativeValue += value;
+    
+    return {
+      [xColumn]: item[xColumn] || `Step ${index + 1}`,
+      [yColumn]: value,
+      cumulative: cumulativeValue,
+      start: startValue,
+      end: cumulativeValue,
+      value: value
+    };
+  });
+}
+
+function processFunnelChart(data: any[], spec: VisualizationSpec): any[] {
+  const xColumn = spec.x;
+  const yColumn = spec.y;
+  
+  if (!xColumn || !yColumn || data.length === 0) return [];
+  
+  const processedData = data.map(item => ({
+    [xColumn]: item[xColumn] || 'Unknown',
+    [yColumn]: parseFloat(String(item[yColumn])) || 0,
+    value: parseFloat(String(item[yColumn])) || 0
+  }));
+  
+  // Sort by value descending for funnel effect
+  return processedData.sort((a, b) => b[yColumn] - a[yColumn]);
+}
+
+function processSpecialChart(data: any[], spec: VisualizationSpec): any[] {
+  // For treemap, sunburst, and radar charts, we'll use similar logic to pie charts
+  // but with different data structures
+  
+  const column = spec.x || spec.y;
+  if (!column || data.length === 0) return [];
+  
+  if (spec.type === 'radar') {
+    // For radar charts, we need multiple numeric columns
+    const numericColumns = Object.keys(data[0] || {}).filter(key => 
+      !isNaN(parseFloat(String(data[0][key])))
+    );
+    
+    if (numericColumns.length < 3) {
+      // Fall back to simple aggregation
+      return processPieChart(data, spec);
+    }
+    
+    return data.slice(0, 5).map(item => {
+      const result: any = { [column]: item[column] || 'Unknown' };
+      numericColumns.forEach(col => {
+        result[col] = parseFloat(String(item[col])) || 0;
+      });
+      return result;
+    });
+  }
+  
+  // For treemap and sunburst, use hierarchical data structure
+  return processPieChart(data, spec);
+}
+
+function processLineChart(data: any[], spec: VisualizationSpec): any[] {
+  const xColumn = spec.x;
+  const yColumn = spec.y;
+  const seriesColumn = spec.series;
+  
+  if (!xColumn || !yColumn || data.length === 0) return [];
   
   // Get transforms - use new format first, fallback to legacy
   const xTransform = spec.transform_x || spec.transform;
   const yTransform = spec.transform_y || spec.transform;
   
-  // Handle date grouping for line charts
+  // Handle series-based line chart (multiple lines)
+  if (seriesColumn) {
+    const grouped = data.reduce((acc, item) => {
+      let xKey = item[xColumn];
+      const yValue = parseFloat(String(item[yColumn]).replace(/[^0-9.-]/g, '')) || 0;
+      const seriesValue = item[seriesColumn] || 'Unknown';
+      
+      // Apply x transform (like date grouping)
+      if (xTransform && xTransform.startsWith('date_group:')) {
+        const groupType = xTransform.split(':')[1];
+        if (xKey) {
+          try {
+            const date = new Date(xKey);
+            if (!isNaN(date.getTime())) {
+              switch (groupType) {
+                case 'year':
+                  xKey = date.getFullYear().toString();
+                  break;
+                case 'quarter':
+                  xKey = `${date.getFullYear()}-Q${Math.ceil((date.getMonth() + 1) / 3)}`;
+                  break;
+                case 'month_year':
+                case 'month':
+                  xKey = date.toLocaleDateString('en-US', { 
+                    year: 'numeric', 
+                    month: 'short' 
+                  });
+                  break;
+              }
+            }
+          } catch (e) {
+            // Keep original value
+          }
+        }
+      }
+      
+      const key = `${xKey}_${seriesValue}`;
+      if (!acc[key]) {
+        acc[key] = {
+          [xColumn]: xKey,
+          [seriesColumn]: seriesValue,
+          [yColumn]: 0,
+          count: 0
+        };
+      }
+      
+      // Apply y transform aggregation
+      if (yTransform === 'sum') {
+        acc[key][yColumn] += yValue;
+      } else if (yTransform === 'count') {
+        acc[key][yColumn] = acc[key].count + 1;
+      } else {
+        acc[key][yColumn] = yValue;
+      }
+      acc[key].count += 1;
+      
+      return acc;
+    }, {} as Record<string, any>);
+    
+    // Convert back to array and sort
+    const result = Object.values(grouped).sort((a, b) => {
+      const aVal = a[xColumn];
+      const bVal = b[xColumn];
+      
+      // Try to parse as dates first
+      const aDate = new Date(aVal);
+      const bDate = new Date(bVal);
+      if (!isNaN(aDate.getTime()) && !isNaN(bDate.getTime())) {
+        return aDate.getTime() - bDate.getTime();
+      }
+      
+      return String(aVal).localeCompare(String(bVal));
+    });
+    
+    return result;
+  }
+  
+  // Handle single line chart with date grouping
   if (xTransform && xTransform.startsWith('date_group:')) {
     const groupType = xTransform.split(':')[1];
     const grouped = data.reduce((acc, item) => {
@@ -436,6 +844,7 @@ function processLineChart(data: any[], spec: VisualizationSpec): any[] {
                 key = `${date.getFullYear()}-Q${Math.ceil((date.getMonth() + 1) / 3)}`;
                 break;
               case 'month_year':
+              case 'month':
                 key = date.toLocaleDateString('en-US', { 
                   year: 'numeric', 
                   month: 'short' 
@@ -462,7 +871,14 @@ function processLineChart(data: any[], spec: VisualizationSpec): any[] {
       return acc;
     }, {} as Record<string, any>);
     
-    return Object.values(grouped).sort((a, b) => a[xColumn].localeCompare(b[xColumn]));
+    return Object.values(grouped).sort((a, b) => {
+      const aDate = new Date(a[xColumn]);
+      const bDate = new Date(b[xColumn]);
+      if (!isNaN(aDate.getTime()) && !isNaN(bDate.getTime())) {
+        return aDate.getTime() - bDate.getTime();
+      }
+      return String(a[xColumn]).localeCompare(String(b[xColumn]));
+    });
   }
   
   if (xTransform === 'aggregate_sum' && yColumn) {
@@ -751,24 +1167,52 @@ export function DynamicChart({ data, specs }: DynamicChartProps) {
     return specs.map((spec, index) => {
       let chartData = [];
       
-      if (spec.type === 'pie' || spec.type === 'donut') {
-        chartData = processPieChart(data, spec);
-      } else if (spec.type === 'bar') {
-        chartData = processBarChart(data, spec);
-      } else if (spec.type === 'stacked_bar') {
-        chartData = processStackedBarChart(data, spec);
-      } else if (spec.type === 'line') {
-        chartData = processLineChart(data, spec);
-      } else if (spec.type === 'area') {
-        chartData = processAreaChart(data, spec);
-      } else if (spec.type === 'scatter') {
-        chartData = processScatterChart(data, spec);
-      } else if (spec.type === 'histogram') {
-        chartData = processHistogram(data, spec);
-      } else if (spec.type === 'box') {
-        chartData = processBoxChart(data, spec);
-      } else if (spec.type === 'heatmap') {
-        chartData = processHeatmapChart(data, spec);
+      switch (spec.type) {
+        case 'pie':
+        case 'donut':
+          chartData = processPieChart(data, spec);
+          break;
+        case 'bar':
+        case 'horizontal_bar':
+          chartData = processBarChart(data, spec);
+          break;
+        case 'stacked_bar':
+        case 'grouped_bar':
+          chartData = processStackedBarChart(data, spec);
+          break;
+        case 'line':
+          chartData = processLineChart(data, spec);
+          break;
+        case 'area':
+          chartData = processAreaChart(data, spec);
+          break;
+        case 'scatter':
+        case 'bubble':
+          chartData = processScatterChart(data, spec);
+          break;
+        case 'histogram':
+          chartData = processHistogram(data, spec);
+          break;
+        case 'box':
+        case 'violin':
+          chartData = processBoxChart(data, spec);
+          break;
+        case 'heatmap':
+          chartData = processHeatmapChart(data, spec);
+          break;
+        case 'waterfall':
+          chartData = processWaterfallChart(data, spec);
+          break;
+        case 'funnel':
+          chartData = processFunnelChart(data, spec);
+          break;
+        case 'treemap':
+        case 'sunburst':
+        case 'radar':
+          chartData = processSpecialChart(data, spec);
+          break;
+        default:
+          chartData = processBarChart(data, spec); // Default fallback
       }
       
       return {
@@ -811,263 +1255,12 @@ export function DynamicChart({ data, specs }: DynamicChartProps) {
           <h3 className="text-lg font-semibold mb-4 text-workpack-text dark:text-white">
             {chart.title}
           </h3>
-          <div className="h-80 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              {chart.type === 'pie' || chart.type === 'donut' ? (
-                <PieChart>
-                  <Pie
-                    data={chart.data}
-                    cx="50%"
-                    cy="50%"
-                    labelLine={false}
-                    label={({ name, percentage }) => `${name}: ${percentage}%`}
-                    outerRadius={80}
-                    innerRadius={chart.type === 'donut' ? 40 : 0}
-                    fill="#8884d8"
-                    dataKey="value"
-                  >
-                    {chart.data.map((entry: any, index: number) => (
-                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <Tooltip content={<CustomTooltip />} />
-                </PieChart>
-              ) : chart.type === 'bar' ? (
-                <BarChart data={chart.data} margin={{ top: 20, right: 30, left: 40, bottom: 100 }}>
-                  <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
-                  <XAxis 
-                    dataKey={chart.x} 
-                    tick={{ fontSize: 12 }}
-                    angle={-45}
-                    textAnchor="end"
-                    height={100}
-                    interval={0}
-                  />
-                  <YAxis 
-                    tick={{ fontSize: 12 }}
-                    width={60}
-                  />
-                  <Tooltip content={<CustomTooltip />} />
-                  <Bar dataKey={chart.transform_y === 'count' || chart.transform === 'count' || chart.title?.includes('Count') || chart.title?.includes('Distribution') ? 'count' : chart.y || 'value'} radius={[4, 4, 0, 0]}>
-                    {chart.data.map((entry: any, dataIndex: number) => (
-                      <Cell key={`cell-${dataIndex}`} fill={COLORS[dataIndex % COLORS.length]} />
-                    ))}
-                  </Bar>
-                </BarChart>
-              ) : chart.type === 'line' ? (
-                <LineChart data={chart.data} margin={{ top: 20, right: 30, left: 40, bottom: 100 }}>
-                  <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
-                  <XAxis 
-                    dataKey={chart.x} 
-                    tick={{ fontSize: 12 }}
-                    angle={-45}
-                    textAnchor="end"
-                    height={100}
-                    interval={0}
-                  />
-                  <YAxis 
-                    tick={{ fontSize: 12 }}
-                    width={60}
-                  />
-                  <Tooltip content={<CustomTooltip />} />
-                  <Line 
-                    type="monotone" 
-                    dataKey={chart.transform_y === 'count' || chart.transform === 'count' || chart.title?.includes('Count') || chart.title?.includes('Distribution') ? 'count' : chart.y || 'value'} 
-                    stroke={COLORS[1]} 
-                    strokeWidth={3}
-                    dot={{ fill: COLORS[1], strokeWidth: 2, r: 4 }}
-                    activeDot={{ r: 6, fill: COLORS[1] }}
-                  />
-                </LineChart>
-              ) : chart.type === 'scatter' ? (
-                <ScatterChart data={chart.data} margin={{ top: 20, right: 30, left: 40, bottom: 100 }}>
-                  <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
-                  <XAxis 
-                    dataKey="x"
-                    type="number"
-                    domain={['dataMin', 'dataMax']}
-                    tick={{ fontSize: 12 }}
-                    tickFormatter={(value) => {
-                      // Format timestamps back to readable dates
-                      const isXDate = chart.x?.includes('date') || chart.x?.includes('start') || chart.x?.includes('finish');
-                      if (isXDate && typeof value === 'number') {
-                        try {
-                          return new Date(value).toLocaleDateString('en-US', { 
-                            month: 'short', 
-                            day: 'numeric'
-                          });
-                        } catch (e) {
-                          return value;
-                        }
-                      }
-                      return value;
-                    }}
-                    angle={-45}
-                    textAnchor="end"
-                    height={100}
-                    width={80}
-                  />
-                  <YAxis 
-                    dataKey="y"
-                    type="number"
-                    domain={['dataMin', 'dataMax']}
-                    tick={{ fontSize: 12 }}
-                    tickFormatter={(value) => {
-                      // Format timestamps back to readable dates
-                      const isYDate = chart.y?.includes('date') || chart.y?.includes('start') || chart.y?.includes('finish');
-                      if (isYDate && typeof value === 'number') {
-                        try {
-                          return new Date(value).toLocaleDateString('en-US', { 
-                            month: 'short', 
-                            day: 'numeric'
-                          });
-                        } catch (e) {
-                          return value;
-                        }
-                      }
-                      return value;
-                    }}
-                    width={80}
-                  />
-                  <Tooltip 
-                    content={({ active, payload }) => {
-                      if (active && payload && payload.length) {
-                        const data = payload[0].payload;
-                        return (
-                          <div className="bg-white dark:bg-slate-800 p-3 border border-gray-200 dark:border-slate-700 rounded-lg shadow-lg">
-                            <p className="text-sm font-semibold text-workpack-text dark:text-white">
-                              {chart.x}: {data.originalX}
-                            </p>
-                            <p className="text-sm text-workpack-text dark:text-white">
-                              {chart.y}: {data.originalY}
-                            </p>
-                          </div>
-                        );
-                      }
-                      return null;
-                    }}
-                  />
-                  <Scatter dataKey="y" fill={COLORS[0]}>
-                    {chart.data.map((entry: any, dataIndex: number) => (
-                      <Cell key={`cell-${dataIndex}`} fill={COLORS[dataIndex % COLORS.length]} />
-                    ))}
-                  </Scatter>
-                </ScatterChart>
-              ) : chart.type === 'histogram' ? (
-                <BarChart data={chart.data} margin={{ top: 20, right: 30, left: 40, bottom: 100 }}>
-                  <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
-                  <XAxis 
-                    dataKey={chart.x || chart.y} 
-                    tick={{ fontSize: 12 }}
-                    angle={-45}
-                    textAnchor="end"
-                    height={100}
-                    interval={0}
-                  />
-                  <YAxis 
-                    tick={{ fontSize: 12 }}
-                    width={60}
-                  />
-                  <Tooltip content={<CustomTooltip />} />
-                  <Bar dataKey="count" radius={[4, 4, 0, 0]}>
-                    {chart.data.map((entry: any, dataIndex: number) => (
-                      <Cell key={`cell-${dataIndex}`} fill={COLORS[dataIndex % COLORS.length]} />
-                    ))}
-                  </Bar>
-                </BarChart>
-              ) : chart.type === 'stacked_bar' ? (
-                <BarChart data={chart.data} margin={{ top: 20, right: 30, left: 40, bottom: 100 }}>
-                  <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
-                  <XAxis 
-                    dataKey={chart.x} 
-                    tick={{ fontSize: 12 }}
-                    angle={-45}
-                    textAnchor="end"
-                    height={100}
-                    interval={0}
-                  />
-                  <YAxis 
-                    tick={{ fontSize: 12 }}
-                    width={60}
-                  />
-                  <Tooltip content={<CustomTooltip />} />
-                  {/* Dynamically create stacked bars based on data keys */}
-                  {chart.data.length > 0 && Object.keys(chart.data[0])
-                    .filter(key => key !== chart.x)
-                    .slice(0, 10) // Limit to 10 stack categories
-                    .map((key, index) => (
-                      <Bar 
-                        key={key} 
-                        dataKey={key} 
-                        stackId="a" 
-                        fill={COLORS[index % COLORS.length]}
-                      />
-                    ))}
-                </BarChart>
-              ) : chart.type === 'area' ? (
-                <AreaChart data={chart.data} margin={{ top: 20, right: 30, left: 40, bottom: 100 }}>
-                  <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
-                  <XAxis 
-                    dataKey={chart.x} 
-                    tick={{ fontSize: 12 }}
-                    angle={-45}
-                    textAnchor="end"
-                    height={100}
-                    interval={0}
-                  />
-                  <YAxis 
-                    tick={{ fontSize: 12 }}
-                    width={60}
-                  />
-                  <Tooltip content={<CustomTooltip />} />
-                  <Area 
-                    type="monotone" 
-                    dataKey={chart.transform_y === 'count' || chart.transform === 'count' || chart.title?.includes('Count') || chart.title?.includes('Distribution') ? 'count' : chart.y || 'value'} 
-                    stroke={COLORS[1]} 
-                    fill={COLORS[1]}
-                    fillOpacity={0.6}
-                  />
-                </AreaChart>
-              ) : chart.type === 'box' ? (
-                <div className="flex flex-col items-center justify-center h-full text-gray-500 dark:text-gray-400">
-                  <p className="text-lg font-medium">Box Plot Statistics</p>
-                  <div className="mt-4 space-y-2 text-sm max-h-60 overflow-y-auto">
-                    {chart.data.slice(0, 10).map((item: any, index: number) => (
-                      <div key={index} className="text-center p-2 bg-gray-50 dark:bg-slate-700 rounded">
-                        <span className="font-medium">{item[chart.x]}</span><br/>
-                        Min: {item.min?.toFixed(1)}, Q1: {item.q1?.toFixed(1)}, 
-                        Median: {item.median?.toFixed(1)}, Q3: {item.q3?.toFixed(1)}, 
-                        Max: {item.max?.toFixed(1)}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ) : chart.type === 'heatmap' ? (
-                <div className="p-4">
-                  <div className="grid gap-1 max-h-60 overflow-auto" style={{ 
-                    gridTemplateColumns: `repeat(${Math.min(10, Math.ceil(Math.sqrt(chart.data.length)))}, 1fr)` 
-                  }}>
-                    {chart.data.slice(0, 100).map((item: any, index: number) => (
-                      <div 
-                        key={index}
-                        className="aspect-square rounded flex items-center justify-center text-xs text-white font-medium min-w-[40px] min-h-[40px]"
-                        style={{ 
-                          backgroundColor: `hsl(${200 + (Math.abs(item.value || 0) * 60)}, 70%, ${50 - (Math.abs(item.value || 0) * 20)}%)` 
-                        }}
-                        title={`${item.x} vs ${item.y}: ${item.value?.toFixed(2) || 0}`}
-                      >
-                        {item.value?.toFixed(1) || '0'}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ) : (
-                <div className="flex items-center justify-center h-full text-gray-500">
-                  <p>Chart type "{chart.type}" not supported yet</p>
-                </div>
-              )}
-            </ResponsiveContainer>
-          </div>
+          {chart.rationale && (
+            <p className="text-sm text-gray-600 dark:text-gray-400 mb-3 italic">
+              {chart.rationale}
+            </p>
+          )}
+          <EnhancedChartRenderer chart={chart} />
         </div>
       ))}
     </div>
