@@ -93,15 +93,7 @@ const chartTestCases = [
     transform_y: "sum",
     expected: "Should show vertical bars with progress totals"
   },
-  {
-    name: "HORIZONTAL BAR CHART",
-    type: "horizontal_bar",
-    x: "assignedTeam",
-    y: "budget",
-    title: "Budget by Team",
-    transform_y: "sum",
-    expected: "Should show horizontal bars with budget totals"
-  },
+
   {
     name: "STACKED BAR CHART",
     type: "stacked_bar",
@@ -294,7 +286,6 @@ function testChartProcessing(testCase, data) {
           break;
           
         case 'bar':
-        case 'horizontal_bar':
           if (!testCase.x || !testCase.y) {
             status = "❌ FAIL";
             details = "Bar charts require both X and Y axes";

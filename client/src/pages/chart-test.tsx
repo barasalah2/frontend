@@ -144,16 +144,7 @@ const coreChartSpecs = [
     transform_y: 'sum',
     rationale: 'Shows total budget allocated to each status category'
   },
-  {
-    type: 'horizontal_bar' as const,
-    x: 'assignedTeam',
-    y: 'progress',
-    series: null,
-    title: 'Average Progress by Team',
-    transform_x: null,
-    transform_y: 'mean',
-    rationale: 'Compares average progress across different teams'
-  }
+
 ];
 
 const advancedChartSpecs = [

@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { EnhancedChartRenderer } from './enhanced-chart-renderer';
 
 interface VisualizationSpec {
-  type: 'line' | 'area' | 'bar' | 'stacked_bar' | 'grouped_bar' | 'horizontal_bar' | 'scatter' | 'bubble' | 'pie' | 'donut' | 'histogram' | 'box' | 'violin' | 'heatmap' | 'treemap' | 'sunburst' | 'radar' | 'waterfall' | 'funnel';
+  type: 'line' | 'area' | 'bar' | 'stacked_bar' | 'grouped_bar' | 'scatter' | 'bubble' | 'pie' | 'donut' | 'histogram' | 'box' | 'violin' | 'heatmap' | 'treemap' | 'sunburst' | 'radar' | 'waterfall' | 'funnel';
   x: string | null;
   y: string | null;
   series: string | null; // for grouping/stacking/bubble size
@@ -525,8 +525,8 @@ function processBarChart(data: any[], spec: VisualizationSpec): any[] {
     return result;
   }
   
-  // Handle aggregate_mean transform for y-axis
-  if (yTransform === 'aggregate_mean' && yColumn) {
+  // Handle aggregate_mean or mean transform for y-axis
+  if ((yTransform === 'aggregate_mean' || yTransform === 'mean') && yColumn) {
     // Calculate means for all groups
     const groups = data.reduce((acc, item) => {
       const key = item[xColumn] || 'Unknown';
@@ -1458,7 +1458,6 @@ export function DynamicChart({ data, specs }: DynamicChartProps) {
           chartData = processPieChart(data, spec);
           break;
         case 'bar':
-        case 'horizontal_bar':
           chartData = processBarChart(data, spec);
           break;
         case 'stacked_bar':

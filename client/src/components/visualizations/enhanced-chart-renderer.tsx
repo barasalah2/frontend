@@ -139,70 +139,7 @@ export function EnhancedChartRenderer({ chart }: EnhancedChartProps) {
           </div>
         );
 
-      case 'horizontal_bar':
-        // For horizontal bar charts, find all numeric columns that have meaningful data
-        const horizontalNumericKeys = chart.data.length > 0 ? 
-          Object.keys(chart.data[0]).filter(key => {
-            const value = chart.data[0][key];
-            return key !== chart.x && 
-                   key !== 'name' && 
-                   key !== 'count' && 
-                   key !== 'value' &&
-                   typeof value === 'number' &&
-                   !isNaN(value);
-          }) : [];
-        
-        // Filter to only include series that have non-zero values in at least one data point
-        const horizontalSeriesKeys = horizontalNumericKeys.filter(key => 
-          chart.data.some(item => item[key] > 0)
-        );
-        
-        return (
-          <div style={{ width: '100%', height: '500px' }}>
-            <BarChart 
-              data={chart.data} 
-              layout="horizontal"
-              width={800} 
-              height={500}
-              margin={{ top: 20, right: 130, left: 120, bottom: 20 }}
-            >
-              <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
-              <XAxis 
-                type="number" 
-                tick={{ fontSize: 12 }} 
-                domain={[0, 'dataMax']}
-                label={{ value: chart.y || 'Value', position: 'insideBottom', offset: -5 }}
-              />
-              <YAxis 
-                dataKey={chart.x} 
-                type="category"
-                tick={{ fontSize: 11 }}
-                width={120}
-                label={{ value: chart.x, angle: -90, position: 'insideLeft' }}
-              />
-              <Tooltip content={<CustomTooltip />} />
-              <Legend />
-              {horizontalSeriesKeys.length > 0 ? (
-                horizontalSeriesKeys.map((key, index) => (
-                  <Bar
-                    key={key}
-                    dataKey={key}
-                    stackId="horizontal-stack"
-                    fill={COLORS[index % COLORS.length]}
-                    radius={index === horizontalSeriesKeys.length - 1 ? [0, 4, 4, 0] : undefined}
-                  />
-                ))
-              ) : (
-                // Fallback: if no series detected, show count/value
-                <Bar
-                  dataKey="count"
-                  fill={COLORS[0]}
-                  radius={[0, 4, 4, 0]}
-                />
-              )}
-            </BarChart>
-          </div>
-        );
+
 
       case 'stacked_bar':
       case 'grouped_bar':
