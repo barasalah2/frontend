@@ -104,17 +104,23 @@ export function EnhancedChartRenderer({ chart }: EnhancedChartProps) {
         return (
           <BarChart 
             data={chart.data} 
-            margin={{ top: 20, right: 30, left: isHorizontal ? 100 : 40, bottom: isHorizontal ? 20 : 100 }}
+            layout={isHorizontal ? "horizontal" : "vertical"}
+            margin={{ top: 20, right: 30, left: isHorizontal ? 120 : 40, bottom: isHorizontal ? 20 : 100 }}
           >
             <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
             {isHorizontal ? (
               <>
-                <XAxis type="number" tick={{ fontSize: 12 }} />
+                <XAxis 
+                  type="number" 
+                  tick={{ fontSize: 12 }} 
+                  label={{ value: dataKey, position: 'insideBottom', offset: -5 }}
+                />
                 <YAxis 
                   dataKey={chart.x} 
                   type="category"
                   tick={{ fontSize: 11 }}
                   width={120}
+                  label={{ value: chart.x, angle: -90, position: 'insideLeft' }}
                 />
               </>
             ) : (
@@ -126,8 +132,13 @@ export function EnhancedChartRenderer({ chart }: EnhancedChartProps) {
                   textAnchor="end"
                   height={100}
                   interval={0}
+                  label={{ value: chart.x, position: 'insideBottom', offset: -5 }}
                 />
-                <YAxis tick={{ fontSize: 12 }} width={60} />
+                <YAxis 
+                  tick={{ fontSize: 12 }} 
+                  width={60}
+                  label={{ value: dataKey, angle: -90, position: 'insideLeft' }}
+                />
               </>
             )}
             <Tooltip content={<CustomTooltip />} />
@@ -147,7 +158,11 @@ export function EnhancedChartRenderer({ chart }: EnhancedChartProps) {
         const stackId = chart.type === 'stacked_bar' ? "stack" : undefined;
         const seriesKeys = chart.data.length > 0 ? 
           Object.keys(chart.data[0]).filter(key => 
-            key !== chart.x && key !== 'name' && typeof chart.data[0][key] === 'number'
+            key !== chart.x && 
+            key !== 'name' && 
+            key !== 'count' && 
+            key !== 'value' &&
+            typeof chart.data[0][key] === 'number'
           ) : [];
         
         return (
@@ -159,8 +174,13 @@ export function EnhancedChartRenderer({ chart }: EnhancedChartProps) {
               angle={-45}
               textAnchor="end"
               height={100}
+              label={{ value: chart.x, position: 'insideBottom', offset: -5 }}
             />
-            <YAxis tick={{ fontSize: 12 }} width={60} />
+            <YAxis 
+              tick={{ fontSize: 12 }} 
+              width={60}
+              label={{ value: 'Count', angle: -90, position: 'insideLeft' }}
+            />
             <Tooltip content={<CustomTooltip />} />
             <Legend />
             {seriesKeys.map((key, index) => (
@@ -207,8 +227,13 @@ export function EnhancedChartRenderer({ chart }: EnhancedChartProps) {
                 angle={-45}
                 textAnchor="end"
                 height={100}
+                label={{ value: chart.x, position: 'insideBottom', offset: -5 }}
               />
-              <YAxis tick={{ fontSize: 12 }} width={60} />
+              <YAxis 
+                tick={{ fontSize: 12 }} 
+                width={60}
+                label={{ value: chart.y || 'Value', angle: -90, position: 'insideLeft' }}
+              />
               <Tooltip content={<CustomTooltip />} />
               <Legend />
               {seriesValues.map((seriesValue, index) => (
@@ -237,8 +262,13 @@ export function EnhancedChartRenderer({ chart }: EnhancedChartProps) {
                 angle={-45}
                 textAnchor="end"
                 height={100}
+                label={{ value: chart.x, position: 'insideBottom', offset: -5 }}
               />
-              <YAxis tick={{ fontSize: 12 }} width={60} />
+              <YAxis 
+                tick={{ fontSize: 12 }} 
+                width={60}
+                label={{ value: chart.y || 'Value', angle: -90, position: 'insideLeft' }}
+              />
               <Tooltip content={<CustomTooltip />} />
               <Legend />
               <Line
@@ -263,8 +293,13 @@ export function EnhancedChartRenderer({ chart }: EnhancedChartProps) {
               angle={-45}
               textAnchor="end"
               height={100}
+              label={{ value: chart.x, position: 'insideBottom', offset: -5 }}
             />
-            <YAxis tick={{ fontSize: 12 }} width={60} />
+            <YAxis 
+              tick={{ fontSize: 12 }} 
+              width={60}
+              label={{ value: chart.y || 'Value', angle: -90, position: 'insideLeft' }}
+            />
             <Tooltip content={<CustomTooltip />} />
             <Legend />
             <Area
@@ -289,6 +324,7 @@ export function EnhancedChartRenderer({ chart }: EnhancedChartProps) {
               tick={{ fontSize: 11 }}
               name={chart.x}
               domain={['dataMin', 'dataMax']}
+              label={{ value: chart.x, position: 'insideBottom', offset: -5 }}
             />
             <YAxis 
               dataKey="y"
@@ -297,6 +333,7 @@ export function EnhancedChartRenderer({ chart }: EnhancedChartProps) {
               width={60}
               name={chart.y}
               domain={['dataMin', 'dataMax']}
+              label={{ value: chart.y, angle: -90, position: 'insideLeft' }}
             />
             <Tooltip 
               content={({ active, payload }) => {
@@ -324,17 +361,30 @@ export function EnhancedChartRenderer({ chart }: EnhancedChartProps) {
         );
 
       case 'histogram':
+        // For histograms, determine the correct x-axis column based on which column was binned
+        let histogramXKey = chart.x;
+        
+        // If y column has bin transform, use y column as x-axis
+        if (chart.transform_y && chart.transform_y.startsWith('bin:')) {
+          histogramXKey = chart.y;
+        }
+        
         return (
           <BarChart data={chart.data} margin={{ top: 20, right: 30, left: 40, bottom: 100 }}>
             <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
             <XAxis 
-              dataKey={chart.x} 
+              dataKey={histogramXKey} 
               tick={{ fontSize: 11 }}
               angle={-45}
               textAnchor="end"
               height={100}
+              label={{ value: histogramXKey, position: 'insideBottom', offset: -5 }}
             />
-            <YAxis tick={{ fontSize: 12 }} width={60} />
+            <YAxis 
+              tick={{ fontSize: 12 }} 
+              width={60}
+              label={{ value: 'Frequency', angle: -90, position: 'insideLeft' }}
+            />
             <Tooltip content={<CustomTooltip />} />
             <Bar
               dataKey="count"
@@ -354,8 +404,13 @@ export function EnhancedChartRenderer({ chart }: EnhancedChartProps) {
               angle={-45}
               textAnchor="end"
               height={100}
+              label={{ value: chart.x, position: 'insideBottom', offset: -5 }}
             />
-            <YAxis tick={{ fontSize: 12 }} width={60} />
+            <YAxis 
+              tick={{ fontSize: 12 }} 
+              width={60}
+              label={{ value: 'Cumulative Value', angle: -90, position: 'insideLeft' }}
+            />
             <Tooltip content={<CustomTooltip />} />
             <ReferenceLine y={0} stroke="#666" strokeDasharray="2 2" />
             <Bar
@@ -370,12 +425,17 @@ export function EnhancedChartRenderer({ chart }: EnhancedChartProps) {
         return (
           <BarChart data={chart.data} layout="horizontal" margin={{ top: 20, right: 30, left: 120, bottom: 20 }}>
             <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
-            <XAxis type="number" tick={{ fontSize: 12 }} />
+            <XAxis 
+              type="number" 
+              tick={{ fontSize: 12 }}
+              label={{ value: chart.y || 'Value', position: 'insideBottom', offset: -5 }}
+            />
             <YAxis 
               dataKey={chart.x} 
               type="category" 
               tick={{ fontSize: 11 }}
               width={120}
+              label={{ value: chart.x, angle: -90, position: 'insideLeft' }}
             />
             <Tooltip content={<CustomTooltip />} />
             <Bar
@@ -403,8 +463,13 @@ export function EnhancedChartRenderer({ chart }: EnhancedChartProps) {
               angle={-45}
               textAnchor="end"
               height={100}
+              label={{ value: chart.x, position: 'insideBottom', offset: -5 }}
             />
-            <YAxis tick={{ fontSize: 12 }} width={60} />
+            <YAxis 
+              tick={{ fontSize: 12 }} 
+              width={60}
+              label={{ value: chart.y || 'Value', angle: -90, position: 'insideLeft' }}
+            />
             <Tooltip content={<CustomTooltip />} />
             <Bar
               dataKey={chart.y || 'value'}
@@ -425,8 +490,13 @@ export function EnhancedChartRenderer({ chart }: EnhancedChartProps) {
               angle={-45}
               textAnchor="end"
               height={100}
+              label={{ value: chart.x, position: 'insideBottom', offset: -5 }}
             />
-            <YAxis tick={{ fontSize: 12 }} width={60} />
+            <YAxis 
+              tick={{ fontSize: 12 }} 
+              width={60}
+              label={{ value: chart.y || 'Value', angle: -90, position: 'insideLeft' }}
+            />
             <Tooltip content={<CustomTooltip />} />
             <Bar
               dataKey={chart.y || 'value'}

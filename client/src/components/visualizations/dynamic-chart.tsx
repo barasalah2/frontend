@@ -163,7 +163,7 @@ function applyTransform(data: any[], column: string, transform: string | null): 
                 key = `${date.getFullYear()}-Q${Math.ceil((date.getMonth() + 1) / 3)}`;
                 break;
               case 'month_year':
-                key = `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}`;
+                key = date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
                 break;
               case 'day':
                 key = date.toISOString().split('T')[0];
@@ -179,7 +179,18 @@ function applyTransform(data: any[], column: string, transform: string | null): 
       }
       return acc;
     }, {} as Record<string, number>);
-    return Object.entries(grouped).sort(([a], [b]) => a.localeCompare(b)).map(([date, count]) => ({ [column]: date, count }));
+    // Sort dates chronologically for better visualization
+    const sortedEntries = Object.entries(grouped).sort(([a], [b]) => {
+      if (groupType === 'month_year') {
+        // Sort by actual date value for month_year
+        const dateA = new Date(a + ' 1'); // Add day for parsing
+        const dateB = new Date(b + ' 1');
+        return dateA.getTime() - dateB.getTime();
+      }
+      return a.localeCompare(b);
+    });
+    
+    return sortedEntries.map(([date, count]) => ({ [column]: date, count, value: count }));
   }
   
   if (transform.startsWith('bin:')) {
@@ -855,13 +866,16 @@ function processLineChart(data: any[], spec: VisualizationSpec): any[] {
             }
             
             if (!acc[key]) {
-              acc[key] = { [xColumn]: key, count: 0, sum: 0 };
+              acc[key] = { [xColumn]: key, count: 0, sum: 0, value: 0 };
             }
             acc[key].count += 1;
             if (yColumn) {
               const value = parseFloat(String(item[yColumn]).replace(/[^0-9.-]/g, '')) || 0;
               acc[key].sum += value;
               acc[key][yColumn] = yTransform === 'count' ? acc[key].count : acc[key].sum;
+              acc[key].value = acc[key][yColumn];
+            } else {
+              acc[key].value = acc[key].count;
             }
           }
         } catch (e) {
@@ -902,9 +916,11 @@ function processLineChart(data: any[], spec: VisualizationSpec): any[] {
         }
         
         if (!acc[key]) {
-          acc[key] = { [xColumn]: key, [yColumn]: 0 };
+          acc[key] = { [xColumn]: key, [yColumn]: 0, count: 0, value: 0 };
         }
         acc[key][yColumn] += yValue;
+        acc[key].count += 1;
+        acc[key].value = acc[key][yColumn];
       }
       return acc;
     }, {} as Record<string, any>);
@@ -933,11 +949,12 @@ function processLineChart(data: any[], spec: VisualizationSpec): any[] {
         }
         
         if (!acc[key]) {
-          acc[key] = { [xColumn]: key, sum: 0, count: 0 };
+          acc[key] = { [xColumn]: key, sum: 0, count: 0, value: 0 };
         }
         acc[key].sum += yValue;
         acc[key].count += 1;
         acc[key][yColumn] = acc[key].sum / acc[key].count; // Calculate mean
+        acc[key].value = acc[key][yColumn];
       }
       return acc;
     }, {} as Record<string, any>);
@@ -1022,38 +1039,165 @@ function processScatterChart(data: any[], spec: VisualizationSpec): any[] {
 }
 
 function processHistogram(data: any[], spec: VisualizationSpec): any[] {
-  const column = spec.x || spec.y;
-  if (!column || data.length === 0) return [];
+  const xColumn = spec.x;
+  const yColumn = spec.y;
   
-  const transform = spec.transform_x || spec.transform || 'bin:auto';
-  const transformed = applyTransform(data, column, transform);
+  if (!data.length) return [];
   
-  // Ensure histogram data has consistent structure
+  // Get transforms
+  const xTransform = spec.transform_x || spec.transform;
+  const yTransform = spec.transform_y || spec.transform;
+  
+  // Determine which column to bin and which transform to use
+  let columnToBin = yColumn; // Default to y column for binning
+  let transform = yTransform || 'bin:auto'; // Default to y transform
+  
+  // If x has a bin transform, use x column instead
+  if (xTransform && xTransform.startsWith('bin:')) {
+    columnToBin = xColumn;
+    transform = xTransform;
+  }
+  
+  if (!columnToBin) {
+    // Fallback: use whichever column exists
+    columnToBin = xColumn || yColumn;
+    transform = xTransform || yTransform || 'bin:auto';
+  }
+  
+  if (!columnToBin) return [];
+  
+  // Apply binning transform
+  const transformed = applyTransform(data, columnToBin, transform);
+  
+  // Ensure histogram data has consistent structure with proper x-axis labels
   return transformed.map(item => ({
     ...item,
-    value: item.value || item.count || item[column] || 0,
-    count: item.count || 1
+    [columnToBin]: item[columnToBin] || item.range || 'Unknown',
+    value: item?.value || item?.count || 0,
+    count: item?.count || 1
   }));
 }
 
 function processStackedBarChart(data: any[], spec: VisualizationSpec): any[] {
   const xColumn = spec.x;
   const yColumn = spec.y;
+  const seriesColumn = spec.series;
   
-  if (!xColumn || !yColumn || data.length === 0) return [];
+  if (!xColumn || data.length === 0) return [];
   
-  // Group data by x-column and create stacked structure
-  const grouped = data.reduce((acc, item) => {
-    const xValue = item[xColumn] || 'Unknown';
-    const yValue = item[yColumn] || 'Unknown';
+  // Get transforms
+  const yTransform = spec.transform_y || spec.transform;
+  
+  // Handle case where y column doesn't exist but we have series - count occurrences
+  if (!yColumn || !data.some(item => item[yColumn] !== undefined && item[yColumn] !== '')) {
+    if (seriesColumn) {
+      // Group by x-column and series, count occurrences
+      const grouped = data.reduce((acc, item) => {
+        const xValue = item[xColumn] || 'Unknown';
+        const seriesValue = item[seriesColumn] || 'Unknown';
+        
+        if (!acc[xValue]) {
+          acc[xValue] = { [xColumn]: xValue, count: 0, value: 0 };
+        }
+        
+        acc[xValue][seriesValue] = (acc[xValue][seriesValue] || 0) + 1;
+        acc[xValue].count += 1;
+        acc[xValue].value += 1;
+        return acc;
+      }, {} as Record<string, any>);
+      
+      return Object.values(grouped);
+    } else {
+      // Simple count by x-column
+      const counts = data.reduce((acc, item) => {
+        const xValue = item[xColumn] || 'Unknown';
+        acc[xValue] = (acc[xValue] || 0) + 1;
+        return acc;
+      }, {} as Record<string, number>);
+      
+      return Object.entries(counts).map(([name, count]) => ({
+        [xColumn]: name,
+        count: count,
+        value: count
+      }));
+    }
+  }
+  
+  // Handle y column with transform
+  if (yTransform === 'count' || spec.title?.includes('Count')) {
+    // Count occurrences grouped by x-column and series
+    const grouped = data.reduce((acc, item) => {
+      const xValue = item[xColumn] || 'Unknown';
+      const seriesValue = seriesColumn ? (item[seriesColumn] || 'Unknown') : 'default';
+      
+      if (!acc[xValue]) {
+        acc[xValue] = { [xColumn]: xValue, count: 0, value: 0 };
+      }
+      
+      if (seriesColumn) {
+        acc[xValue][seriesValue] = (acc[xValue][seriesValue] || 0) + 1;
+      } else {
+        acc[xValue].value += 1;
+      }
+      acc[xValue].count += 1;
+      return acc;
+    }, {} as Record<string, any>);
     
-    if (!acc[xValue]) {
-      acc[xValue] = { [xColumn]: xValue };
+    // For stacked bar charts, ensure all series values exist for each x value
+    if (seriesColumn) {
+      const allSeriesValues = [...new Set(data.map(item => item[seriesColumn] || 'Unknown'))];
+      const result = Object.values(grouped);
+      
+      // Make sure each x-value has all series values (fill missing with 0)
+      result.forEach(item => {
+        allSeriesValues.forEach(seriesValue => {
+          if (!(seriesValue in item)) {
+            item[seriesValue] = 0;
+          }
+        });
+      });
+      
+      return result;
     }
     
-    acc[xValue][yValue] = (acc[xValue][yValue] || 0) + 1;
+    return Object.values(grouped);
+  }
+  
+  // Original logic for when y column exists and needs to be summed
+  const grouped = data.reduce((acc, item) => {
+    const xValue = item[xColumn] || 'Unknown';
+    const yValue = parseFloat(String(item[yColumn]).replace(/[^0-9.-]/g, '')) || 0;
+    const seriesValue = seriesColumn ? (item[seriesColumn] || 'Unknown') : 'default';
+    
+    if (!acc[xValue]) {
+      acc[xValue] = { [xColumn]: xValue, count: 0, value: 0 };
+    }
+    
+    if (seriesColumn) {
+      acc[xValue][seriesValue] = (acc[xValue][seriesValue] || 0) + yValue;
+    } else {
+      acc[xValue].value += yValue;
+    }
+    acc[xValue].count += 1;
     return acc;
   }, {} as Record<string, any>);
+  
+  // For stacked bar charts, ensure all series values exist for each x value
+  if (seriesColumn) {
+    const allSeriesValues = [...new Set(data.map(item => item[seriesColumn] || 'Unknown'))];
+    const result = Object.values(grouped);
+    
+    // Make sure each x-value has all series values (fill missing with 0)
+    result.forEach(item => {
+      allSeriesValues.forEach(seriesValue => {
+        if (!(seriesValue in item)) {
+          item[seriesValue] = 0;
+        }
+      });
+    });
+    
+    return result;
+  }
   
   return Object.values(grouped);
 }

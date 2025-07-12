@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { ChevronUp, ChevronDown, Search, Filter, X, BarChart3, Save } from "lucide-react";
+import { ChevronUp, ChevronDown, Search, Filter, X, BarChart3, Save, Code } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -27,6 +27,8 @@ export function EnhancedWorkPackageTable({ data, conversationId }: EnhancedWorkP
   const [showVisualizations, setShowVisualizations] = useState(false);
   const [showMessageDialog, setShowMessageDialog] = useState(false);
   const [userMessage, setUserMessage] = useState("");
+  const [showJsonDialog, setShowJsonDialog] = useState(false);
+  const [chartJson, setChartJson] = useState("");
   const { toast } = useToast();
 
   const columns = useMemo(() => {
@@ -115,10 +117,59 @@ export function EnhancedWorkPackageTable({ data, conversationId }: EnhancedWorkP
     setShowMessageDialog(true);
   };
 
+  const handleJsonVisualization = () => {
+    setShowJsonDialog(true);
+  };
+
+  const generateFromJson = () => {
+    try {
+      console.log('Generating charts from JSON input');
+      const parsedSpecs = JSON.parse(chartJson);
+      
+      // Validate that it's an array of chart specifications
+      if (!Array.isArray(parsedSpecs)) {
+        throw new Error('Chart JSON must be an array of chart specifications');
+      }
+      
+      // Validate each spec has required fields
+      const validSpecs = parsedSpecs.filter(spec => {
+        if (!spec.type) {
+          console.warn('Skipping chart spec without type:', spec);
+          return false;
+        }
+        return true;
+      });
+      
+      if (validSpecs.length === 0) {
+        throw new Error('No valid chart specifications found');
+      }
+      
+      console.log('Valid chart specs:', validSpecs);
+      setVisualizationSpecs(validSpecs);
+      setShowVisualizations(true);
+      setShowJsonDialog(false);
+      setChartJson("");
+      
+      toast({
+        title: "Success",
+        description: `Generated ${validSpecs.length} chart(s) from JSON`,
+      });
+      
+    } catch (error) {
+      console.error('Error parsing chart JSON:', error);
+      toast({
+        title: "Error",
+        description: `Invalid JSON format: ${error.message}`,
+        variant: "destructive",
+      });
+    }
+  };
+
   const generateVisualization = async () => {
     console.log('Generate visualization button clicked!');
     console.log('Data:', data);
     console.log('Data length:', data?.length);
+    console.log('Conversation ID:', conversationId);
     
     if (!data || data.length === 0) {
       console.log('No data available for visualization');
@@ -149,12 +200,14 @@ export function EnhancedWorkPackageTable({ data, conversationId }: EnhancedWorkP
         columns: columnInfo.map(col => ({ name: col.name })), // Only send column names as per your spec
         data_snippet: dataSnippet,
         total_rows: data.length,
+        ...(conversationId && { conv_id: conversationId }), // Include conversation ID if available
         // Remove internal saving params when calling external app
         ...(userMessage.trim() && { message: userMessage.trim() })
       };
 
       console.log('Sending to AI backend:', AI_BACKEND_URL);
       console.log('Request payload:', requestPayload);
+      console.log('Conv ID in payload:', requestPayload.conv_id);
       
       const response = await fetch(AI_BACKEND_URL, {
         method: 'POST',
@@ -418,6 +471,15 @@ export function EnhancedWorkPackageTable({ data, conversationId }: EnhancedWorkP
             {isGeneratingViz ? 'Generating...' : 'Generate Charts'}
           </Button>
           
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleJsonVisualization}
+          >
+            <Code className="h-4 w-4 mr-2" />
+            Custom JSON
+          </Button>
+          
           {showVisualizations && (
             <div className="flex gap-2">
               <Button
@@ -590,6 +652,70 @@ export function EnhancedWorkPackageTable({ data, conversationId }: EnhancedWorkP
                 disabled={isGeneratingViz}
               >
                 {isGeneratingViz ? 'Generating...' : 'Generate Charts'}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* JSON Input Dialog */}
+      <Dialog open={showJsonDialog} onOpenChange={setShowJsonDialog}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Custom Chart JSON</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium mb-2">
+                Chart Specifications (JSON Array)
+              </label>
+              <div className="text-sm text-gray-600 dark:text-gray-400 mb-2">
+                Enter an array of chart specifications. Example:
+              </div>
+              <div className="bg-gray-100 dark:bg-gray-800 p-3 rounded text-sm mb-3">
+                <pre>{`[
+  {
+    "type": "bar",
+    "x": "cwp_name",
+    "y": null,
+    "title": "Count of CWP Names",
+    "transform_x": "count"
+  },
+  {
+    "type": "pie",
+    "x": "status",
+    "y": null,
+    "title": "Status Distribution",
+    "transform_x": "count"
+  }
+]`}</pre>
+              </div>
+              <Textarea
+                placeholder="Enter your chart JSON specifications here..."
+                value={chartJson}
+                onChange={(e) => setChartJson(e.target.value)}
+                className="min-h-[200px] font-mono"
+              />
+              <div className="text-xs text-gray-500 mt-2">
+                Available chart types: bar, pie, line, scatter, histogram, stacked_bar, etc.
+                Available transforms: count, sum, mean, date_group:month, topk:10, etc.
+              </div>
+            </div>
+            <div className="flex justify-end space-x-2">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setShowJsonDialog(false);
+                  setChartJson("");
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={generateFromJson}
+                disabled={!chartJson.trim()}
+              >
+                Generate Charts
               </Button>
             </div>
           </div>

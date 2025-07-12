@@ -392,6 +392,7 @@ export default function WorkpacksGenie() {
                             {msg.headers && msg.table && (
                               <EnhancedWorkPackageTable 
                                 data={formatTableDataForChart(msg.table, msg.headers)} 
+                                conversationId={convId}
                               />
                             )}
                           </div>
