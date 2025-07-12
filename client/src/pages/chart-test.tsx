@@ -144,7 +144,16 @@ const coreChartSpecs = [
     transform_y: 'sum',
     rationale: 'Shows total budget allocated to each status category'
   },
-
+  {
+    type: 'horizontal_bar' as const,
+    x: 'assignedTeam',
+    y: 'budget',
+    series: 'priority',
+    title: 'Budget by Team and Priority',
+    transform_x: null,
+    transform_y: 'sum',
+    rationale: 'Shows horizontal bars with multiple series like the reference image'
+  }
 ];
 
 const advancedChartSpecs = [

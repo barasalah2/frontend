@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { EnhancedChartRenderer } from './enhanced-chart-renderer';
 
 interface VisualizationSpec {
-  type: 'line' | 'area' | 'bar' | 'stacked_bar' | 'grouped_bar' | 'scatter' | 'bubble' | 'pie' | 'donut' | 'histogram' | 'box' | 'violin' | 'heatmap' | 'treemap' | 'sunburst' | 'radar' | 'waterfall' | 'funnel';
+  type: 'line' | 'area' | 'bar' | 'stacked_bar' | 'grouped_bar' | 'horizontal_bar' | 'scatter' | 'bubble' | 'pie' | 'donut' | 'histogram' | 'box' | 'violin' | 'heatmap' | 'treemap' | 'sunburst' | 'radar' | 'waterfall' | 'funnel';
   x: string | null;
   y: string | null;
   series: string | null; // for grouping/stacking/bubble size
@@ -26,6 +26,45 @@ const COLORS = [
   '#f472b6', '#14b8a6', '#fb7185', '#22d3ee', '#a78bfa',
   '#fbbf24', '#f87171', '#34d399', '#60a5fa', '#c084fc'
 ];
+
+// Process horizontal bar chart data for multiple series (like the reference image)
+function processHorizontalBarChart(data: any[], spec: VisualizationSpec): any[] {
+  const xColumn = spec.x || 'category';
+  const yColumn = spec.y || 'value';
+  const seriesColumn = spec.series;
+  
+  // If no series specified, treat as single series
+  if (!seriesColumn) {
+    return processBarChart(data, spec);
+  }
+  
+  // Group data by x-axis categories and series
+  const grouped = data.reduce((acc, item) => {
+    const category = item[xColumn] || 'Unknown';
+    const seriesValue = item[seriesColumn] || 'Unknown';
+    const value = parseFloat(String(item[yColumn]).replace(/[^0-9.-]/g, '')) || 0;
+    
+    if (!acc[category]) {
+      acc[category] = {};
+    }
+    
+    // For multiple data points in same category/series, sum them
+    acc[category][seriesValue] = (acc[category][seriesValue] || 0) + value;
+    
+    return acc;
+  }, {} as Record<string, Record<string, number>>);
+  
+  // Convert to array format suitable for horizontal bar chart
+  const result = Object.entries(grouped).map(([category, seriesData]) => ({
+    [xColumn]: category,
+    ...seriesData,
+    // Add metadata for compatibility
+    count: Object.keys(seriesData).length,
+    value: Object.values(seriesData).reduce((sum, val) => sum + val, 0)
+  }));
+  
+  return result;
+}
 
 // Enhanced transform functions supporting all DataVisAgent transformations
 function applyTransform(data: any[], column: string, transform: string | null): any[] {
@@ -1459,6 +1498,9 @@ export function DynamicChart({ data, specs }: DynamicChartProps) {
           break;
         case 'bar':
           chartData = processBarChart(data, spec);
+          break;
+        case 'horizontal_bar':
+          chartData = processHorizontalBarChart(data, spec);
           break;
         case 'stacked_bar':
         case 'grouped_bar':
